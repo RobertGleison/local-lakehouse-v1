@@ -3,13 +3,13 @@ status: draft
 date: 2026-05-13
 owner: Robert Pereira
 superseded_by:
-tags: [infrastructure, kubernetes, k3d, argocd, gitops, helm, secrets, phase-1]
+tags: [infrastructure, kubernetes, k3d, argocd, gitops, helm, secrets, pvcs, phase-1]
 ---
 # 0006 — Infrastructure Layout: k3d, Argo CD, and Helm
 
 ## Context
 
-[[0001-phase-1-storage-layer]] established that all services run on k3d and are managed by Argo CD from day 1. What that ADR does not define is the concrete shape of the infrastructure: how the cluster is configured, how Argo CD Applications are structured, how Helm charts are organised, how namespaces are allocated, and how secrets are handled without committing plain credentials to Git.
+[[0001-phase-1-storage-layer]] established that all services run on k3d and are managed by Argo CD from day 1. What that ADR does not define is the concrete shape of the infrastructure: how the cluster is configured, how Argo CD Applications are structured, how Helm charts are organised, how namespaces are allocated, how secrets are handled without committing plain credentials to Git, and which services need persistent storage.
 
 These decisions affect every phase of the project. A poor namespace strategy or a secret management approach that conflicts with GitOps will cause friction at every subsequent phase. This ADR defines the infrastructure conventions that all phases follow.
 
@@ -44,7 +44,7 @@ options:
           - server:0
 ```
 
-The local volume mount (`local-datalake-storage`) provides the backing store for all PersistentVolumeClaims — including ClickHouse (see [[0004-phase-3-query-layer]]) and OpenMetadata's Postgres backend.
+The local volume mount (`local-datalake-storage`) maps k3s's PVC storage path to the Mac's local filesystem. This means PVC data survives both pod restarts and full `k3d cluster delete` + recreate cycles — the data lives on the Mac, not inside the Docker container.
 
 Bootstrap installs the cluster and Argo CD only:
 ```bash
@@ -56,39 +56,52 @@ helm install argocd argo/argo-cd --namespace argocd --create-namespace
 
 After bootstrap, no further `kubectl` or `helm` commands are run. All subsequent state is applied via Argo CD.
 
-### 2. Argo CD Application structure
+### 2. How services are deployed: Git → Argo CD → Kubernetes objects
 
-Each phase is an independent Argo CD `Application` manifest in `apps/`. Phases are activated explicitly by applying their manifest — there is no automatic discovery. This avoids the App of Apps indirection and makes each phase's activation a deliberate, visible action.
+Every service follows the same deployment flow:
 
 ```
-apps/
-├── phase-1-storage.yaml      # MinIO + Nessie
-├── phase-2-pipeline.yaml     # Dagster
-├── phase-3-query.yaml        # Trino + ClickHouse + Cloudbeaver
-└── phase-4-govern.yaml       # Keycloak + OpenMetadata + Grafana stack
+Git push to main
+      │
+      ▼ Argo CD detects drift
+Argo CD runs helm template (or applies YAML directory)
+      │
+      ▼ Kubernetes objects created in the target namespace
+  Deployment      ← stateless services (Trino, Dagster webserver, Cloudbeaver)
+  StatefulSet     ← stateful services (MinIO, ClickHouse, Keycloak, Postgres)
+  Job / CronJob   ← one-off or scheduled workloads (Dagster pipeline runs)
+  Service         ← internal ClusterIP or LoadBalancer for exposed UIs
+  Ingress         ← path-based routing through k3d's load balancer
+  PVC             ← persistent storage claim (see section 4)
+  Secret          ← decrypted by Sealed Secrets controller (see section 5)
 ```
 
-**Activating a phase:**
-```bash
-kubectl apply -f apps/phase-1-storage.yaml
-```
+Stateless services (`Deployment`) have no local state — they can be deleted and recreated freely. Stateful services (`StatefulSet`) are backed by a PVC; the pod can be restarted or rescheduled without data loss as long as the PVC exists.
 
-After that, Argo CD watches the `helm/minio/` and `helm/nessie/` directories in Git and syncs on every push to `main`. No further manual commands needed.
+### 3. Argo CD Application types
 
-Each Application manifest follows this structure:
+Three types of Argo CD Applications are used depending on whether a service has an upstream Helm chart:
+
 ```yaml
-# apps/phase-1-storage.yaml
+# Type 1 — upstream Helm chart + local values.yaml (most services)
+# The chart is fetched from the upstream registry at sync time.
+# This repo stores only the values overrides.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: phase-1-storage
+  name: minio
   namespace: argocd
 spec:
-  project: default
-  source:
-    repoURL: <this-repo>
-    targetRevision: main
-    path: helm/minio          # points to the local values directory
+  sources:
+    - repoURL: https://charts.bitnami.com/bitnami
+      chart: minio
+      targetRevision: 14.x
+      helm:
+        valueFiles:
+          - $values/helm/minio/values.yaml
+    - repoURL: <this-repo>       # second source: provides the values file
+      targetRevision: main
+      ref: values
   destination:
     server: https://kubernetes.default.svc
     namespace: phase-1
@@ -98,100 +111,170 @@ spec:
       selfHeal: true
 ```
 
-For services that use an upstream Helm chart (not a local chart), the Application uses a `helm` source type with `repoURL` pointing to the upstream chart registry and `valueFiles` pointing to this repo's values file.
-
-### 3. Namespace strategy
-
-One Kubernetes namespace per phase. Services within a phase share a namespace. Cross-phase communication (e.g. Dagster writing to MinIO in `phase-1`) uses fully qualified service DNS names: `minio.phase-1.svc.cluster.local`.
-
-```
-phase-1    MinIO, Nessie
-phase-2    Dagster
-phase-3    Trino, ClickHouse, Cloudbeaver
-phase-4    Keycloak, OpenMetadata, Loki, Prometheus, Grafana
-argocd     Argo CD (installed by bootstrap)
+```yaml
+# Type 2 — local YAML manifests directory (Cloudbeaver — no upstream Helm chart)
+spec:
+  source:
+    repoURL: <this-repo>
+    path: helm/cloudbeaver       # directory of plain Deployment + Service YAML
+    targetRevision: main
 ```
 
-This maps directly to the rollout structure — tearing down a phase is `kubectl delete namespace phase-N`. It also makes resource usage per phase visible in Grafana (filter by namespace).
-
-### 4. Helm chart organisation
-
-Upstream Helm charts are referenced by URL in the Argo CD Application spec. This repo stores only the `values.yaml` overrides — not the chart files themselves. Charts are fetched by Argo CD at sync time from their canonical registries.
-
-```
-helm/
-├── minio/
-│   └── values.yaml           # overrides for bitnami/minio
-├── nessie/
-│   └── values.yaml           # overrides for projectnessie/nessie
-├── trino/
-│   └── values.yaml           # overrides for trino/trino
-├── clickhouse/
-│   └── values.yaml           # overrides for clickhouse/clickhouse
-├── dagster/
-│   └── values.yaml           # overrides for dagster/dagster
-├── keycloak/
-│   └── values.yaml           # overrides for bitnami/keycloak
-├── openmetadata/
-│   └── values.yaml           # overrides for open-metadata/openmetadata
-└── grafana-stack/
-    └── values.yaml           # overrides for grafana/loki-stack (Loki + Promtail + Grafana)
+```yaml
+# Type 3 — local umbrella chart (Grafana stack: Loki + Prometheus + Grafana together)
+spec:
+  source:
+    repoURL: <this-repo>
+    path: helm/grafana-stack     # Chart.yaml with sub-chart dependencies
+    targetRevision: main
 ```
 
-Values files contain only the keys that differ from the chart defaults: replica counts, resource limits, storage sizes, service types, and environment-specific connection strings. Full chart defaults are not copied.
+Each phase has one Application manifest in `apps/`. Phases are activated explicitly:
+```bash
+kubectl apply -f apps/phase-1-storage.yaml
+```
 
-### 5. Secrets management: Sealed Secrets
+After that single command, Argo CD takes over and syncs the phase on every push to `main`.
 
-Credentials (MinIO access keys, Keycloak admin password, database passwords) must be in Git to satisfy the GitOps "Git is the single source of truth" principle. Plain Kubernetes Secrets (base64-encoded) must never be committed — they are not encrypted, only encoded.
+### 4. Persistent Volumes
 
-**Sealed Secrets** (Bitnami) encrypts Secret manifests with the cluster's public key. The encrypted `SealedSecret` manifest is safe to commit. The Sealed Secrets controller in the cluster decrypts it with the cluster's private key and creates the real Kubernetes Secret.
+k3s ships with a built-in `local-path` storage class that provisions PVCs automatically from the node's local filesystem — no external storage driver needed. Combined with the k3d volume mount in `cluster.yaml`, PVC data persists on the Mac's disk and survives cluster recreation.
+
+PVC declarations live in each service's `values.yaml`. Only services with durable data need PVCs:
+
+| Service | Needs PVC | Storage class | Size | Reason |
+|---|---|---|---|---|
+| MinIO | Yes | `local-path` | 20 Gi | All Iceberg Parquet files (Bronze/Silver/Gold) |
+| ClickHouse | Yes | `local-path` | 10 Gi | Columnar data; must survive scale-to-zero |
+| OpenMetadata Postgres | Yes | `local-path` | 5 Gi | Table catalog and lineage metadata |
+| Nessie | Yes | `local-path` | 2 Gi | RocksDB catalog history |
+| Prometheus | Yes | `local-path` | 5 Gi | 15-day metrics retention |
+| Keycloak Postgres | Yes | `local-path` | 2 Gi | User/role/client data |
+| Dagster | No | — | — | Stateless; run history in a shared Postgres |
+| Trino | No | — | — | Stateless query engine |
+| Loki | No | — | — | Stores logs in MinIO, not locally |
+| Cloudbeaver | No | — | — | Stateless web client |
+
+PVC example in `values.yaml`:
+```yaml
+# helm/clickhouse/values.yaml
+persistence:
+  enabled: true
+  storageClass: local-path
+  size: 10Gi
+```
+
+### 5. Secrets: Sealed Secrets
+
+Credentials (MinIO access keys, Keycloak admin password, database passwords) must be in Git to satisfy the GitOps principle. Plain Kubernetes Secrets must never be committed — they are base64-encoded, not encrypted.
+
+**Sealed Secrets** (Bitnami) encrypts Secret manifests with the cluster's public key. The encrypted `SealedSecret` is safe to commit. The Sealed Secrets controller decrypts it and creates the real Kubernetes `Secret` at sync time.
+
+**Flow from Git to pod:**
 
 ```
-helm/
-└── sealed-secrets/
-    └── values.yaml           # Sealed Secrets controller (installed in phase-1)
+secrets/phase-1/minio-credentials.yaml   ← SealedSecret in Git (encrypted)
+      │
+      ▼ Argo CD syncs to cluster
+SealedSecret object in cluster
+      │
+      ▼ Sealed Secrets controller decrypts with cluster private key
+Kubernetes Secret object  (minio-credentials)
+      │
+      ▼ Pod references by name — never by value
+env:
+  - name: MINIO_ROOT_USER
+    valueFrom:
+      secretKeyRef:
+        name: minio-credentials
+        key: access-key
+```
 
-secrets/
-├── phase-1/
-│   ├── minio-credentials.yaml      # SealedSecret — safe to commit
-│   └── nessie-config.yaml
-├── phase-2/
-│   └── dagster-secrets.yaml
-├── phase-3/
-│   ├── trino-config.yaml
-│   └── clickhouse-credentials.yaml
-└── phase-4/
-    ├── keycloak-admin.yaml
-    └── openmetadata-config.yaml
+The `values.yaml` file references the Secret name only — never the credential value:
+```yaml
+# helm/minio/values.yaml
+auth:
+  existingSecret: minio-credentials    # name of the K8s Secret
 ```
 
 **Workflow for creating a new secret:**
 ```bash
-# 1. Create the plain Secret manifest (never committed)
+# 1. Generate the plain Secret (never committed)
 kubectl create secret generic minio-credentials \
   --from-literal=access-key=minioadmin \
   --from-literal=secret-key=minioadmin \
   --dry-run=client -o yaml > /tmp/minio-secret.yaml
 
-# 2. Seal it with the cluster's public key
-kubeseal --format yaml < /tmp/minio-secret.yaml > secrets/phase-1/minio-credentials.yaml
+# 2. Encrypt with the cluster's public key
+kubeseal --format yaml < /tmp/minio-secret.yaml \
+  > secrets/phase-1/minio-credentials.yaml
 
-# 3. Commit the sealed manifest — safe
+# 3. Commit — safe
 git add secrets/phase-1/minio-credentials.yaml
 git commit -m "feat: add sealed minio credentials"
 ```
 
-Argo CD syncs the `SealedSecret` to the cluster. The controller creates the real `Secret` automatically.
+**Secrets by phase:**
+```
+secrets/
+├── phase-1/
+│   ├── minio-credentials.yaml         # MinIO root access key
+│   └── nessie-config.yaml             # Nessie storage backend config
+├── phase-2/
+│   └── dagster-postgres.yaml          # Dagster run history DB password
+├── phase-3/
+│   ├── trino-config.yaml              # Trino MinIO connector credentials
+│   └── clickhouse-credentials.yaml   # ClickHouse admin password
+└── phase-4/
+    ├── keycloak-admin.yaml            # Keycloak bootstrap admin password
+    └── openmetadata-config.yaml       # OpenMetadata DB + JWT secrets
+```
 
-### 6. Full directory layout
+### 6. Namespace strategy
+
+One Kubernetes namespace per phase. Cross-phase communication uses fully qualified DNS: `<service>.<namespace>.svc.cluster.local`.
+
+```
+argocd     Argo CD + Sealed Secrets controller
+phase-1    MinIO, Nessie
+phase-2    Dagster
+phase-3    Trino, ClickHouse, Cloudbeaver
+phase-4    Keycloak, OpenMetadata, Loki, Prometheus, Grafana
+```
+
+Tearing down a phase: `kubectl delete namespace phase-N` — removes all pods and services for that phase without touching others. PVC data is preserved (PVCs are namespace-scoped but the underlying volume on the Mac's disk remains).
+
+### 7. Helm chart organisation
+
+This repo stores only `values.yaml` overrides. Upstream chart files are not copied.
+
+```
+helm/
+├── sealed-secrets/values.yaml     # Bitnami Sealed Secrets controller
+├── minio/values.yaml              # bitnami/minio overrides
+├── nessie/values.yaml             # projectnessie/nessie overrides
+├── dagster/values.yaml            # dagster/dagster overrides
+├── trino/values.yaml              # trino/trino overrides
+├── clickhouse/values.yaml         # clickhouse/clickhouse overrides
+├── cloudbeaver/
+│   ├── deployment.yaml            # plain Deployment (no upstream chart)
+│   └── service.yaml               # plain Service
+├── keycloak/values.yaml           # bitnami/keycloak overrides
+├── openmetadata/values.yaml       # open-metadata/openmetadata overrides
+└── grafana-stack/
+    ├── Chart.yaml                 # umbrella chart declaring sub-chart deps
+    └── values.yaml                # overrides for Loki + Prometheus + Grafana
+```
+
+### 8. Full directory layout
 
 ```
 local-datalake/
 ├── infra/
-│   ├── cluster.yaml              # k3d cluster definition
-│   └── bootstrap.sh              # k3d create + Argo CD install only
+│   ├── cluster.yaml
+│   └── bootstrap.sh
 ├── apps/
-│   ├── phase-1-storage.yaml      # Argo CD Application
+│   ├── phase-1-storage.yaml
 │   ├── phase-2-pipeline.yaml
 │   ├── phase-3-query.yaml
 │   └── phase-4-govern.yaml
@@ -202,16 +285,20 @@ local-datalake/
 │   ├── dagster/values.yaml
 │   ├── trino/values.yaml
 │   ├── clickhouse/values.yaml
-│   ├── cloudbeaver/values.yaml   # deployed as a plain Deployment (no Helm chart)
+│   ├── cloudbeaver/
+│   │   ├── deployment.yaml
+│   │   └── service.yaml
 │   ├── keycloak/values.yaml
 │   ├── openmetadata/values.yaml
-│   └── grafana-stack/values.yaml
+│   └── grafana-stack/
+│       ├── Chart.yaml
+│       └── values.yaml
 ├── secrets/
-│   ├── phase-1/                  # SealedSecret manifests — safe to commit
+│   ├── phase-1/
 │   ├── phase-2/
 │   ├── phase-3/
 │   └── phase-4/
-├── pipelines/                    # see [[0002-phase-2-pipeline-layer]]
+├── pipelines/
 │   ├── bronze/
 │   ├── silver/
 │   └── gold/
@@ -225,47 +312,43 @@ local-datalake/
 
 The App of Apps pattern uses a single root `Application` that watches the `apps/` directory and auto-creates child Applications for every manifest it finds. It is the idiomatic Argo CD pattern for managing many applications at scale.
 
-It was rejected for this project because:
-1. It adds one layer of indirection between Git and the cluster state. Understanding why a service is or is not deployed requires tracing through the root Application → child Application chain.
-2. Activating a phase by merging a PR (App of Apps) is less explicit than `kubectl apply -f apps/phase-N.yaml`. For a learning environment, the explicit apply makes the activation step visible and intentional.
-3. App of Apps shines when managing 20+ applications across multiple teams. With 4 phases and a single operator, the added complexity is not justified.
+Rejected because:
+1. It adds one layer of indirection — understanding why a service is not deployed requires tracing root Application → child Application.
+2. Activating a phase via `kubectl apply -f apps/phase-N.yaml` is more explicit than a PR merge that auto-triggers discovery. In a learning environment, explicit activation is preferable.
+3. App of Apps shines with 20+ applications across multiple teams. With 4 phases and a single operator, the complexity is not justified.
 
 ### Single namespace instead of per-phase namespaces
 
-A single `datalake` namespace for all services is simpler — no cross-namespace DNS, no namespace-level RBAC configuration. Rejected because:
-1. Per-phase namespaces make it possible to tear down a single phase (`kubectl delete namespace phase-3`) without affecting the rest of the stack. This is a common learning operation — "let me rebuild Phase 3 from scratch."
-2. Namespace-level resource quotas in Grafana make the RAM budget per phase visible at runtime.
-3. Phase isolation prevents accidental service name collisions between phases.
+Simpler — no cross-namespace DNS. Rejected because:
+1. `kubectl delete namespace phase-3` is the cleanest way to rebuild a single phase during learning.
+2. Per-namespace resource usage is visible in Grafana without label filtering.
+3. Service name collisions between phases are prevented at the namespace boundary.
 
-### Local Helm chart copies instead of upstream charts with values overrides
+### Local Helm chart copies (umbrella chart pattern)
 
-Copying full chart files into the repo (umbrella chart pattern) gives complete control over chart contents and avoids upstream changes breaking the cluster. Rejected because:
-1. Helm chart files are large (hundreds of YAML lines). Copying them creates maintenance overhead — upstream security patches must be manually merged.
-2. Argo CD's Helm source type with `repoURL` pointing to upstream registries is the standard GitOps pattern. Chart updates are a one-line version bump in the Application spec.
-3. The `values.yaml` files in this repo are the only customisation surface needed. Chart internals are upstream concerns.
+Full chart files in this repo gives complete control but creates maintenance overhead — upstream security patches must be manually merged. Rejected: `values.yaml` overrides are the only customisation surface needed. Chart internals are upstream concerns.
 
 ### SOPS instead of Sealed Secrets
 
-SOPS (Mozilla) encrypts YAML/JSON files with age, PGP, or cloud KMS keys. It is a general-purpose file encryption tool, not Kubernetes-specific. It was considered and rejected because:
-1. Sealed Secrets is cluster-bound by design — a secret sealed for one cluster cannot be decrypted by another. This is a safety property: accidentally deploying to the wrong cluster does not expose secrets.
-2. Sealed Secrets integrates natively with Argo CD as a CRD — no external decryption step in CI/CD.
-3. SOPS requires managing a separate key (age or PGP key) and a decryption step in Argo CD. For a local learning environment, Sealed Secrets is simpler to operate.
+SOPS encrypts files with age/PGP/KMS. Rejected because Sealed Secrets is cluster-bound by design (a secret sealed for one cluster cannot be decrypted by another — a safety property), integrates natively with Argo CD as a CRD, and requires no external key management step.
 
-### Plain Kubernetes Secrets (not committed) with a setup script
+### Plain Kubernetes Secrets not committed to Git
 
-An alternative approach: keep secrets out of Git entirely, managed by a one-time `setup-secrets.sh` script. This avoids encryption tooling but violates the GitOps principle — the cluster cannot be fully rebuilt from Git alone. Rejected on principle: if the cluster is rebuilt (common in a learning environment), secrets must be reapplied manually. With Sealed Secrets, `git clone` + bootstrap + `kubectl apply` is a complete rebuild.
+Keeps secrets out of Git via a one-time `setup-secrets.sh` script. Rejected: violates GitOps — the cluster cannot be fully rebuilt from Git alone. With Sealed Secrets, `git clone` + bootstrap + phase activation is a complete, repeatable rebuild.
 
 ## Consequences
 
 **Positive:**
-- The full cluster state is reproducible from `git clone` alone. Sealed Secrets ensures credentials are in Git without security risk.
-- Per-phase namespaces align activation, teardown, and observability with the rollout stages.
-- Individual Application manifests make each phase's activation explicit — no magic auto-discovery.
-- Remote Helm charts with local values keep the repo focused: only customisations live here, not chart boilerplate.
-- The k3d volume mount ensures PVC-backed services (ClickHouse, OpenMetadata Postgres) survive cluster restarts.
+- Full cluster state — including secrets — is reproducible from `git clone` alone.
+- The k3d volume mount means PVC data (MinIO, ClickHouse, Postgres) persists across cluster restarts and deletions.
+- Per-phase namespaces align teardown and observability with the rollout stages.
+- Individual Application manifests make each phase's activation a deliberate action.
+- Remote Helm charts with local values keep the repo lean — only overrides, not chart boilerplate.
+- `local-path` storage class requires no external storage driver — zero additional configuration for PVCs.
 
 **Negative / trade-offs:**
-- Sealed Secrets introduces a bootstrap dependency: the Sealed Secrets controller must be running before any `SealedSecret` manifest can be synced. It must be installed in Phase 1 alongside MinIO and Nessie.
-- If the k3d cluster is destroyed with `k3d cluster delete`, the Sealed Secrets controller's private key is lost. Sealed Secrets cannot be decrypted by a new cluster. The private key must be backed up before cluster deletion: `kubectl get secret -n kube-system sealed-secrets-key -o yaml > sealed-secrets-key-backup.yaml`.
-- Cross-phase service communication requires fully qualified DNS names (`service.namespace.svc.cluster.local`), which are longer than single-namespace names. Values files must use these FQDNs for connection strings.
-- Cloudbeaver has no official Helm chart. It is deployed as a plain Kubernetes `Deployment` + `Service` manifest under `helm/cloudbeaver/`, managed by Argo CD as a directory-type Application (not a Helm Application).
+- Sealed Secrets controller must be running before any `SealedSecret` can be synced. It is the first dependency installed in Phase 1.
+- The Sealed Secrets private key lives in the cluster. If the cluster is deleted without backing up the key, all sealed secrets must be re-sealed against the new cluster's key: `kubectl get secret -n kube-system sealed-secrets-key -o yaml > sealed-secrets-key-backup.yaml`.
+- Cross-phase service DNS (`minio.phase-1.svc.cluster.local`) is verbose. All `values.yaml` connection strings must use FQDNs — not short names.
+- Cloudbeaver has no upstream Helm chart. Its `helm/cloudbeaver/` directory contains hand-maintained Kubernetes manifests that must be updated manually when upgrading Cloudbeaver.
+- Dagster and Keycloak both need a Postgres database. Two separate Postgres `StatefulSet` deployments are required — one per service — adding ~400 MB RAM and two additional PVCs.
