@@ -3,191 +3,197 @@ status: draft
 date: 2026-05-13
 owner: Robert Pereira
 superseded_by:
-tags: [data-quality, duckdb, dagster, testing, phase-2]
+tags: [data-quality, duckdb, dagster, soda-core, testing, phase-2]
 ---
 # 0003 — Data Quality in DuckDB
 
 ## Context
 
-[[0002-phase-2-pipeline-layer]] decided to use DuckDB SQL scripts for Bronze → Silver → Gold transforms instead of dbt. dbt is the most common framework for data quality in SQL-first pipelines — it ships with built-in tests (`not_null`, `unique`, `accepted_values`, `relationships`), a Great Expectations integration (`dbt-expectations`), and unit tests (dbt 1.8+). By excluding dbt, this project trades away that testing ecosystem.
+[[0002-phase-2-pipeline-layer]] decided to use DuckDB SQL scripts for Bronze → Silver → Gold transforms instead of dbt. dbt is the most common framework for data quality in SQL-first pipelines — it ships with built-in tests (`not_null`, `unique`, `accepted_values`, `relationships`), a Great Expectations integration, and unit tests (dbt 1.8+). By excluding dbt, this project trades away that testing ecosystem.
 
 This ADR answers: **how do we get equivalent data quality guarantees using the tools already in the stack (DuckDB + Dagster)?**
 
-The quality surface spans three layers and three concerns:
+Two distinct quality concerns must be addressed:
 
-| Layer | What to validate |
-|---|---|
-| Bronze | Schema conformance, row count > 0, no duplicate primary keys from source |
-| Silver | Not-null on business keys, referential integrity, value domain checks |
-| Gold | Business rule assertions (e.g. metrics are non-negative, totals are internally consistent) |
+1. **Production data validity** — is the data that landed correct? (Null PKs, domain violations, schema drift, freshness)
+2. **Transform correctness** — does the SQL produce the right output? (Silent regressions when transform logic changes)
 
-The quality checks must be visible alongside pipeline runs — a failure should block downstream assets, not silently pass.
+In production Spark/Delta Lake pipelines, quality checks are never run against the full table on every pipeline run. The pattern is tiered by scope and frequency:
+
+| Tier | When | Scope |
+|---|---|---|
+| Pre/post-write | Every run | New batch only (today's partition) |
+| Aggregate | Daily | Full table or sample |
+| Profiling | Weekly | 1–5% statistical sample |
+
+This ADR adopts the same tiering. Checks that scan the full table on every run are an anti-pattern at scale.
 
 ## Decision
 
-Implement data quality using **Dagster Asset Checks** for runtime validation and **pytest + DuckDB in-memory** for unit-level transform testing. No additional framework is introduced.
+Use **Soda Core** (`soda-core-duckdb`) for production data validity checks and **pytest + snapshot testing** for transform correctness. No hand-written SQL assertions. No additional orchestration tool.
 
-### Layer 1: Dagster Asset Checks (runtime, per-asset)
+### Directory structure
 
-Dagster 1.5+ ships `@asset_check` — a first-class decorator that attaches a named check to any asset. Checks appear in the Dagster UI's asset graph, run automatically after materialisation, and block downstream assets on failure when configured with `blocking=True`.
-
-Each Iceberg table asset gets one or more checks defined in the same file as the asset. Checks query the table via DuckDB using PyIceberg to read the Parquet files.
-
-**dbt test equivalents:**
-
-| dbt test | Dagster Asset Check equivalent |
-|---|---|
-| `not_null` | `SELECT COUNT(*) FROM t WHERE col IS NULL` → fail if > 0 |
-| `unique` | `SELECT COUNT(*) - COUNT(DISTINCT col) FROM t` → fail if > 0 |
-| `accepted_values` | `SELECT COUNT(*) FROM t WHERE col NOT IN ('a','b','c')` → fail if > 0 |
-| `relationships` | JOIN to parent table, count unmatched FKs → fail if > 0 |
-| `dbt-expectations: expect_column_values_to_be_between` | `SELECT COUNT(*) FROM t WHERE col < min OR col > max` → fail if > 0 |
-| `dbt-expectations: expect_table_row_count_to_be_between` | `SELECT COUNT(*) FROM t` → fail if outside bounds |
-| Custom test | Any SQL assertion returning a violation count |
-
-**Example — Silver layer customer asset check:**
-
-```python
-from dagster import asset_check, AssetCheckResult, AssetCheckSeverity
-
-@asset_check(asset=silver_customers, blocking=True)
-def silver_customers_no_null_id(context) -> AssetCheckResult:
-    count = duckdb.sql(
-        "SELECT COUNT(*) FROM iceberg_scan('s3://silver/customers') WHERE customer_id IS NULL"
-    ).fetchone()[0]
-    return AssetCheckResult(
-        passed=count == 0,
-        severity=AssetCheckSeverity.ERROR,
-        metadata={"null_id_count": count},
-    )
-
-@asset_check(asset=silver_customers, blocking=True)
-def silver_customers_unique_id(context) -> AssetCheckResult:
-    result = duckdb.sql("""
-        SELECT COUNT(*) - COUNT(DISTINCT customer_id)
-        FROM iceberg_scan('s3://silver/customers')
-    """).fetchone()[0]
-    return AssetCheckResult(passed=result == 0, metadata={"duplicate_count": result})
-```
-
-Checks are grouped under `pipelines/assets/<layer>_checks.py`. The Dagster UI shows each check by name, its pass/fail status, and the metadata (violation counts) per run.
-
-### Layer 2: pytest + DuckDB in-memory (unit, per-transform)
-
-The Bronze → Silver and Silver → Gold SQL scripts in `pipelines/transforms/` are pure SQL. They can be unit-tested by:
-
-1. Loading a small fixture dataset into an in-memory DuckDB database
-2. Executing the transform SQL against it
-3. Asserting the output shape, types, and values with standard pytest assertions
-
-This is equivalent to dbt's unit tests (introduced in dbt 1.8).
-
-```python
-# tests/transforms/test_silver_customers.py
-import duckdb
-import pytest
-
-@pytest.fixture
-def db():
-    conn = duckdb.connect()
-    conn.execute("""
-        CREATE TABLE bronze_customers AS
-        SELECT * FROM (VALUES
-            (1, 'Alice', NULL),
-            (2, 'Bob', 'bob@example.com'),
-            (2, 'Bob_dup', 'dup@example.com')   -- duplicate id
-        ) t(customer_id, name, email)
-    """)
-    return conn
-
-def test_silver_deduplicates_on_customer_id(db):
-    db.execute(open("pipelines/transforms/silver_customers.sql").read())
-    count = db.execute("SELECT COUNT(*) FROM silver_customers").fetchone()[0]
-    assert count == 2  # duplicate removed
-
-def test_silver_drops_null_email_rows(db):
-    db.execute(open("pipelines/transforms/silver_customers.sql").read())
-    nulls = db.execute(
-        "SELECT COUNT(*) FROM silver_customers WHERE email IS NULL"
-    ).fetchone()[0]
-    assert nulls == 0
-```
-
-Tests live under `tests/transforms/` and run via `pytest` as part of CI. They run in milliseconds — no cluster, no MinIO, no Iceberg required.
-
-### Where each check type lives
+SQL transforms and Soda YAML checks are colocated per table — the same way dbt colocates models and `schema.yml` tests. Pytest snapshot tests live in a `tests/` subfolder alongside each transform.
 
 ```
 pipelines/
-├── assets/
-│   ├── bronze_assets.py       # @asset definitions
-│   ├── bronze_checks.py       # @asset_check: schema, row count, no-dup PK
-│   ├── silver_assets.py
-│   ├── silver_checks.py       # @asset_check: not_null, unique, domain values
-│   ├── gold_assets.py
-│   └── gold_checks.py         # @asset_check: business rule assertions
-└── transforms/
-    ├── silver_customers.sql
-    └── gold_revenue.sql
-tests/
-└── transforms/
-    ├── test_silver_customers.py
-    └── test_gold_revenue.py
+├── bronze/
+│   └── <table>/
+│       ├── <table>.sql          # ingestion or raw transform
+│       └── <table>.yml          # Soda checks
+├── silver/
+│   └── <table>/
+│       ├── <table>.sql          # DuckDB Bronze → Silver transform
+│       ├── <table>.yml          # Soda checks
+│       └── tests/
+│           ├── fixture.py       # controlled input rows
+│           └── test_<table>.py  # snapshot assertions
+└── gold/
+    └── <table>/
+        ├── <table>.sql          # DuckDB Silver → Gold transform
+        ├── <table>.yml          # Soda checks
+        └── tests/
+            ├── fixture.py
+            └── test_<table>.py
+```
+
+### Soda Core — production data validity
+
+Soda Core provides a YAML-based check catalogue. No SQL is written by hand — checks reference named expectations from Soda's built-in library.
+
+**Bronze (every run, new batch, blocking):**
+```yaml
+checks for bronze_customers:
+  - row_count > 0
+  - missing_count(customer_id) = 0
+  - duplicate_count(customer_id) = 0
+  - schema:
+      fail:
+        when required column missing: [customer_id, name, ingested_at]
+```
+
+**Silver (every run, new batch, blocking):**
+```yaml
+checks for silver_customers:
+  - missing_count(customer_id) = 0
+  - duplicate_count(customer_id) = 0
+  - invalid_count(status) = 0:
+      valid values: [active, inactive]
+  - missing_count(email) < 5%    # warn only — does not block
+```
+
+**Gold (daily schedule, full table, warn only):**
+```yaml
+checks for gold_revenue:
+  - row_count > 0
+  - min(amount) >= 0
+  - freshness(calculated_at) < 25h
+  - avg(amount) between 50 and 5000
+```
+
+### Dagster integration
+
+A single wrapper function auto-discovers `*.yml` files and wires them as Dagster `@asset_check` — written once, reused by every table. Adding quality checks to a new table only requires creating a `.yml` file; no Python touched.
+
+```python
+# pipelines/quality/soda_checks.py
+def build_soda_check(asset, yml_path, blocking):
+    @asset_check(asset=asset, blocking=blocking)
+    def _check(context) -> AssetCheckResult:
+        scan = Scan()
+        scan.set_data_source_name("duckdb")
+        scan.add_configuration_yaml_file("soda/configuration.yml")
+        scan.add_sodacl_yaml_file(yml_path)
+        scan.add_variables({"date": context.partition_key})
+        scan.execute()
+        return AssetCheckResult(
+            passed=scan.get_error_count() == 0,
+            metadata={"errors": scan.get_error_count(), "warnings": scan.get_warning_count()},
+        )
+    return _check
 ```
 
 ### Severity tiers
 
-Not all checks should block the pipeline. Dagster Asset Checks support two severities:
-
-| Severity | Behaviour | Use for |
+| Severity | Dagster behaviour | Use for |
 |---|---|---|
-| `ERROR` + `blocking=True` | Blocks downstream assets | Null PKs, negative revenue, zero-row tables |
-| `WARN` | Flags in UI, does not block | Unexpected nulls on optional fields, row count deviations |
+| `blocking=True` | Halts downstream assets | Null PKs, schema mismatch, zero-row tables |
+| `blocking=False` | Flags in UI, pipeline continues | Optional field nulls, metric anomalies |
+
+### pytest + snapshot — transform unit tests
+
+Transform unit tests validate that the SQL in each `<table>.sql` produces the expected output given controlled input. These are equivalent to **dbt unit tests** (dbt 1.8+) and the **`chispa` golden file pattern** used in Spark pipelines.
+
+Tests run in-memory with DuckDB — no MinIO, no Iceberg, no cluster required.
+
+```python
+# pipelines/silver/customers/tests/test_customers.py
+import duckdb
+
+def test_deduplicates_on_customer_id(snapshot):
+    conn = duckdb.connect()
+    conn.execute(open("pipelines/silver/customers/customers.sql").read())
+    result = conn.execute("SELECT * FROM silver_customers ORDER BY customer_id").df()
+    snapshot.assert_match(result.to_csv(index=False), "silver_customers.csv")
+```
+
+- First run: `pytest --snapshot-update` saves the golden `.csv` to Git
+- Every subsequent run: compares output against the committed golden file
+- Intentional transform change: re-run `--snapshot-update` to approve the new output
+
+### What each layer tests
+
+| Layer | Tool | Catches |
+|---|---|---|
+| Soda YAML | Runtime, production data | Null PKs, domain violations, freshness, schema drift |
+| pytest snapshot | CI, transform logic | Silent regressions when SQL changes |
 
 ## Alternatives Considered
 
-### Great Expectations (standalone)
+### Hand-written SQL assertions via Dagster Asset Checks (original approach)
 
-Great Expectations (GX) is the industry-standard data quality framework. It has a DuckDB backend via its SQLAlchemy connector and supports 50+ built-in expectations. It was considered and rejected for this project because:
+The first draft of this ADR used `@asset_check` with raw SQL assertions per check:
+```python
+@asset_check(asset=silver_customers, blocking=True)
+def no_null_id(context) -> AssetCheckResult:
+    count = duckdb.sql("SELECT COUNT(*) FROM ... WHERE customer_id IS NULL").fetchone()[0]
+    return AssetCheckResult(passed=count == 0, metadata={"null_count": count})
+```
+Rejected because every check requires 8–10 lines of Python boilerplate (vs 1 line in Soda YAML), there is no standard catalogue (every check is SQL written from scratch), and there is no batch scoping built in. Soda Core solves all three problems.
 
-1. **Operational complexity**: GX requires a Data Context, a Data Source, Expectation Suites, and Checkpoints — all persisted as JSON or YAML config files. This is significant setup overhead for a learning project.
-2. **No Dagster UI integration**: GX produces its own HTML reports. Failures must be surfaced to Dagster via a custom sensor or op, adding glue code. Dagster Asset Checks integrate natively.
-3. **RAM**: A GX Checkpoint run loads the full GX runtime (~200–300 MB). Dagster Asset Checks run as lightweight Python functions with no additional runtime.
+### Great Expectations
 
-GX would be the right choice for a production lakehouse with a dedicated data quality team. At this project's scale, the complexity is not justified.
+GX is the industry standard with 50+ built-in expectations, auto-profiling (scans a table and suggests expectations), and a `dagster-great-expectations` integration. It was considered and rejected because:
 
-### Soda Core
+1. **Setup complexity**: GX requires a Data Context, Expectation Suites, and Checkpoints — significant overhead for a learning project.
+2. **Weight**: ~200 MB runtime vs ~50 MB for Soda Core.
+3. **GX v1 API churn**: GX v1 (current) has a significantly different API from v0 — most tutorials are outdated, increasing learning friction.
 
-Soda Core is a lighter alternative to GX with a YAML-based check syntax and a DuckDB scanner. It addresses GX's complexity problem but introduces a new tool that is not otherwise present in the stack. Since Dagster Asset Checks can express all the same checks as SQL, adding Soda Core would duplicate functionality. Rejected on the same grounds: no native Dagster UI integration, extra dependency, no new capabilities.
+GX is the right choice for a production environment with a dedicated data quality team. Soda Core achieves the same goals with less configuration.
+
+### Soda Core + Great Expectations hybrid
+
+Using Soda for standard checks and GX for statistical/profiling checks was considered. Rejected: two quality frameworks in the same project doubles the configuration surface without adding new capabilities that matter at this project's scale.
 
 ### dbt-duckdb (bring dbt back)
 
-The `dbt-duckdb` adapter allows dbt to run against DuckDB as its warehouse. This would restore the full dbt testing ecosystem (`not_null`, `unique`, `dbt-expectations`, unit tests). It was considered and rejected because:
-
-1. ADR [[0002-phase-2-pipeline-layer]] excluded dbt specifically to avoid adding a new tool surface when DuckDB SQL scripts cover the same transform patterns.
-2. Running dbt alongside Dagster creates a split orchestration model: Dagster orchestrates assets, dbt orchestrates transforms. The integration is possible (dagster-dbt) but adds a layer of indirection that complicates the learning environment.
-3. Dagster Asset Checks + pytest cover all the test categories dbt provides. The added complexity of dbt is not justified by a quality gap.
-
-If the project grows in scope (e.g., multiple data sources, a team of analysts writing transforms), revisiting dbt-duckdb would be warranted.
-
-### Pandera (DataFrame validation)
-
-Pandera validates pandas/Polars DataFrames against a schema at the Python level. It is well-suited for ingestion validation (validating a DataFrame before writing to Bronze) but does not cover SQL transform correctness or table-level assertions. It is not rejected — it may be used within dlt pipeline steps to validate incoming API payloads before landing them. But it is not the primary data quality mechanism.
+Using `dbt-duckdb` would restore the full dbt test ecosystem. Rejected — see [[0002-phase-2-pipeline-layer]] for the rationale. Running dbt alongside Dagster splits orchestration and contradicts the single-tool-per-concern principle.
 
 ## Consequences
 
 **Positive:**
-- Dagster Asset Checks are visible in the asset graph UI — the same place engineers already watch pipeline runs. No separate quality dashboard needed.
-- `blocking=True` propagates failures through the dependency graph automatically. A bad Bronze table will not silently produce a corrupt Gold table.
-- pytest + DuckDB in-memory transform tests run in milliseconds, require no external services, and can run in CI on every push.
-- No new runtime dependencies: DuckDB and Dagster are already in the stack.
-- The SQL assertion pattern is identical to what analysts already write. No new framework to learn.
+- Soda YAML checks are as concise as dbt `schema.yml` tests — one line per assertion, no Python boilerplate.
+- Adding quality checks to a new table requires only a `.yml` file. No Python changes.
+- Batch-scoped scanning mirrors production Spark/Delta patterns — checks never scan the full table on every run.
+- Blocking checks propagate failures through the Dagster asset graph automatically.
+- pytest snapshot tests catch transform regressions in CI with no external services.
+- `soda-core-duckdb` + `pytest-snapshot` add ~50 MB to the dependency footprint — negligible.
 
 **Negative / trade-offs:**
-- Dagster Asset Checks require more Python boilerplate than dbt's YAML test syntax. A `not_null` check that is one line in `schema.yml` is 8–10 lines of Python here.
-- There is no auto-generated documentation for checks comparable to dbt's docs site.
-- pytest transform tests must be maintained alongside the SQL scripts — a refactor of `silver_customers.sql` requires updating the corresponding test fixtures. This coupling is intentional but requires discipline.
-- Great Expectations' richer expectation library (statistical distributions, column correlations) is not available without adding GX.
+- Soda's Dagster integration (`soda-dagster`) is not as mature as `dagster-great-expectations`. The wrapper function is a one-time build but must be maintained.
+- No auto-profiling: unlike GX, Soda cannot scan a table and suggest which checks to add. Initial check authorship is manual.
+- Snapshot golden files must be updated (`pytest --snapshot-update`) whenever a transform changes intentionally — a small but real maintenance discipline.
 
 **Follow-up decisions needed:**
 - [[0004-phase-3-query-layer]] — Trino, ClickHouse, Cloudbeaver
