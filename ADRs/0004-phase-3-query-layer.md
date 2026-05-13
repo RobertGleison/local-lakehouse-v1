@@ -39,7 +39,9 @@ ClickHouse ingests the Gold Iceberg layer (via a scheduled Dagster asset) and st
 
 ClickHouse is the dedicated analytics engine. It does not replace Trino — Trino remains the federated query layer. ClickHouse handles the "fast dashboard" use case.
 
-ClickHouse is also scaled to 0 replicas when idle.
+ClickHouse is scaled to 0 replicas when idle. Unlike Trino (which is stateless — all data lives in MinIO), ClickHouse owns its data on disk. Scaling to 0 is safe only because ClickHouse is deployed with a **PersistentVolumeClaim (PVC)** in k3d. The PVC survives pod termination independently. When scaled back to 1 replica, the new pod mounts the same PVC and all tables are immediately available — equivalent to a database restart, not a wipe.
+
+Trino, by contrast, holds no data at all. Scaling it to 0 has no data implications — it re-reads Parquet files from MinIO on the next query.
 
 **RAM:** ~800 MB.
 
@@ -112,7 +114,7 @@ Metabase is a lightweight BI tool with a question-based interface and a SQL edit
 - Trino gives analysts SQL access to all three Iceberg layers without moving data — the core "open lakehouse" query pattern.
 - Cross-layer queries (e.g. joining Bronze raw rows to Gold aggregates for reconciliation) are possible in a single Trino SQL statement.
 - ClickHouse provides sub-second OLAP on Gold data — the performance gap between "batch query" and "dashboard query" becomes concrete and learnable.
-- Both Trino and ClickHouse can be scaled to 0 replicas, reducing always-on RAM pressure to ~300 MB (Cloudbeaver only) when the query layer is idle.
+- Both Trino and ClickHouse can be scaled to 0 replicas, reducing always-on RAM pressure to ~300 MB (Cloudbeaver only) when the query layer is idle. ClickHouse data persists across scale events via its PVC; Trino is stateless and requires no special handling.
 - Cloudbeaver connects to both engines in the same UI — no tool-switching between Trino and ClickHouse queries.
 
 **Negative / trade-offs:**
