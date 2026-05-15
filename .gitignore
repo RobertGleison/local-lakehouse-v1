@@ -1,1 +1,3 @@
 .superpowers/
+/tmp/
+*.unsealed.yaml
