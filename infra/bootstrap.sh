@@ -12,6 +12,7 @@ k3d cluster create --config "$SCRIPT_DIR/cluster.yaml"
 echo "==> Adding Helm repos..."
 helm repo add argo https://argoproj.github.io/argo-helm
 helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
 helm repo update
 
 echo "==> Installing Argo CD..."
@@ -23,8 +24,10 @@ helm install argocd argo/argo-cd \
 echo "==> Installing Sealed Secrets controller..."
 # Bootstrapped here (not via Argo CD) so the controller is ready before
 # sealing secrets and before applying Argo CD Applications.
-helm install sealed-secrets bitnami/sealed-secrets \
-  --namespace argocd \
+helm install sealed-secrets sealed-secrets/sealed-secrets \
+  --namespace kube-system \
+  --create-namespace \
+  --values "$REPO_ROOT/helm/sealed-secrets/values.yaml" \
   --wait
 
 echo ""
