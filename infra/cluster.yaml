@@ -1,0 +1,22 @@
+# infra/cluster.yaml
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: local-datalake
+servers: 1
+agents: 0
+ports:
+  - port: 8080:80@loadbalancer
+  - port: 8443:443@loadbalancer
+  - port: 9000:9000@loadbalancer
+  - port: 9001:9001@loadbalancer
+volumes:
+  - volume: local-datalake-storage:/var/lib/rancher/k3s/storage
+    nodeFilters:
+      - server:0
+options:
+  k3s:
+    extraArgs:
+      - arg: --disable=traefik
+        nodeFilters:
+          - server:0
