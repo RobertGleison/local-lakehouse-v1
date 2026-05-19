@@ -17,7 +17,7 @@ spec:
     targetRevision: main
   destination:
     server: https://kubernetes.default.svc
-    namespace: phase-1
+    namespace: local-datalake
   syncPolicy:
     automated:
       prune: true      # delete resources removed from git
