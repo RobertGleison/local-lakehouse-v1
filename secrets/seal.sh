@@ -15,14 +15,18 @@ kubectl create secret generic minio-credentials \
   --from-literal=root-user=minioadmin \
   --from-literal=root-password=minioadmin123 \
   --dry-run=client -o yaml \
-| kubeseal --scope namespace-wide --format yaml \
+| kubeseal \
+  --controller-name sealed-secrets \
+  --controller-namespace kube-system \
+  --scope namespace-wide \
+  --format yaml \
   > "$SCRIPT_DIR/minio-credentials.yaml"
 
 echo ""
-echo "Sealed secrets written to secrets/phase-1/"
+echo "Sealed secrets written to secrets/"
 echo ""
-echo "Next: commit and push, then activate phase 1:"
-echo "  git add secrets/phase-1/minio-credentials.yaml"
+echo "Next: commit and push, then deploy:"
+echo "  git add secrets/minio-credentials.yaml"
 echo "  git commit -m 'feat: add sealed phase-1 secrets'"
 echo "  git push"
-echo "  kubectl apply -f apps/phase-1-storage.yaml"
+echo "  kubectl apply -f apps/"
