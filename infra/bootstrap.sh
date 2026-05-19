@@ -11,7 +11,6 @@ k3d cluster create --config "$SCRIPT_DIR/cluster.yaml"
 
 echo "==> Adding Helm repos..."
 helm repo add argo https://argoproj.github.io/argo-helm
-helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo add sealed-secrets https://bitnami-labs.github.io/sealed-secrets
 helm repo update
 
@@ -27,13 +26,12 @@ echo "==> Installing Sealed Secrets controller..."
 helm install sealed-secrets sealed-secrets/sealed-secrets \
   --namespace kube-system \
   --create-namespace \
-  --values "$REPO_ROOT/helm/sealed-secrets/values.yaml" \
   --wait
 
 echo ""
 echo "Bootstrap complete."
 echo ""
 echo "Next steps:"
-echo "  1. Seal secrets:      bash $REPO_ROOT/secrets/phase-1/seal.sh"
+echo "  1. Seal secrets:      bash $REPO_ROOT/secrets/seal.sh"
 echo "  2. Commit sealed secrets and push to GitHub"
-echo "  3. Activate phase 1:  kubectl apply -f $REPO_ROOT/apps/phase-1-storage.yaml"
+echo "  3. Activate services: kubectl apply -f $REPO_ROOT/apps/"
