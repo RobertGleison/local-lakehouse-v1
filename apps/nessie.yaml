@@ -1,0 +1,26 @@
+# apps/nessie.yaml
+# Wave 1: deploy Nessie (data catalog — manages table versions in the lakehouse)
+# Depends on wave 0: requires nessie-storage Secret to already exist (if applicable)
+# Activate with: kubectl apply -f apps/nessie.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: nessie
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1" # runs after wave 0 (secrets)
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RobertGleison/local-datalake
+    path: services/nessie/application   # ArgoCD auto-detects Helm when Chart.yaml is present
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: phase-1
+  syncPolicy:
+    automated:
+      prune: true      # delete resources removed from git
+      selfHeal: true   # re-apply if manually changed in the cluster
+    syncOptions:
+      - CreateNamespace=true

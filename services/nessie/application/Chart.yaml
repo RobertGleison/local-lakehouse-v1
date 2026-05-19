@@ -1,0 +1,6 @@
+apiVersion: v2
+name: nessie
+description: Nessie data catalog — Git-like versioning for Iceberg tables stored in MinIO
+type: application
+version: 0.1.0      # chart version — bump when you change the chart
+appVersion: "latest" # version of Nessie itself

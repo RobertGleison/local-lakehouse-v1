@@ -1,0 +1,31 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-bucket-init
+  namespace: {{ .Release.Namespace }}
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure  # retry if MinIO isn't ready yet
+      containers:
+        - name: mc
+          image: minio/mc:latest  # MinIO client CLI
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.secretName }}
+                  key: {{ .Values.auth.userKey }}
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.secretName }}
+                  key: {{ .Values.auth.passwordKey }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              mc alias set local http://minio:{{ .Values.service.apiPort }} $MINIO_ROOT_USER $MINIO_ROOT_PASSWORD
+              {{- range .Values.buckets }}  {{/* iterates over the buckets list in values.yaml */}}
+              mc mb --ignore-existing local/{{ . }}
+              {{- end }}

@@ -1,0 +1,33 @@
+image:
+  repository: minio/minio
+  tag: latest
+
+replicaCount: 1
+
+# credentials are read from a Kubernetes Secret (managed by SealedSecrets in wave 0)
+auth:
+  secretName: minio-credentials
+  userKey: root-user
+  passwordKey: root-password
+
+# buckets created by the bucket-init Job on first deploy
+buckets:
+  - bronze  # raw ingestion layer
+  - silver  # cleaned/validated data
+  - gold    # aggregated/business-ready data
+
+persistence:
+  storageClassName: local-path  # k3s built-in provisioner
+  size: 20Gi
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m
+
+service:
+  apiPort: 9000     # S3 API — used by Spark, Trino, etc.
+  consolePort: 9001 # web UI

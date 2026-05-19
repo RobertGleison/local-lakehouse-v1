@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nessie
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: nessie
+  template:
+    metadata:
+      labels:
+        app: nessie  # Service uses this label to route traffic to this pod
+    spec:
+      containers:
+        - name: nessie
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          env:
+            - name: NESSIE_VERSION_STORE_TYPE  # tells Nessie which storage backend to use
+              value: {{ .Values.versionStore.type }}
+            - name: NESSIE_VERSION_STORE_ROCKSDB_DB_PATH  # directory inside the container for RocksDB files
+              value: {{ .Values.versionStore.rocksdb.dbPath }}
+          ports:
+            - containerPort: {{ .Values.service.port }}  # Nessie REST API
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}  # toYaml + nindent renders the resources block with correct indentation
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.versionStore.rocksdb.dbPath }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: nessie-pvc  # binds to the PVC in pvc.yaml

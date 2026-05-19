@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: minio  # routes traffic to pods with this label (matches deployment.yaml)
+  ports:
+    - name: api
+      port: {{ .Values.service.apiPort }}
+      targetPort: {{ .Values.service.apiPort }}
+    - name: console
+      port: {{ .Values.service.consolePort }}
+      targetPort: {{ .Values.service.consolePort }}

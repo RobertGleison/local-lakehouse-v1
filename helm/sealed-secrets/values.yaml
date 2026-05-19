@@ -1,9 +1,0 @@
-# helm/sealed-secrets/values.yaml
-# Resource caps sized for 16 GB MacBook learning environment.
-resources:
-  requests:
-    memory: 64Mi
-    cpu: 50m
-  limits:
-    memory: 128Mi
-    cpu: 100m
