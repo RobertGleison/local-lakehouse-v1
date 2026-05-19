@@ -4,7 +4,9 @@ metadata:
   name: minio
   namespace: {{ .Release.Namespace }}
 spec:
+  {{- if not .Values.hpa.enabled }}
   replicas: {{ .Values.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       app: minio

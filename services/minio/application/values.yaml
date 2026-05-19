@@ -28,6 +28,12 @@ resources:
     memory: 512Mi
     cpu: 500m
 
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
 service:
   apiPort: 9000     # S3 API — used by Spark, Trino, etc.
   consolePort: 9001 # web UI
