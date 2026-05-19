@@ -1,22 +1,32 @@
-# infra/cluster.yaml
 apiVersion: k3d.io/v1alpha5
 kind: Simple
 metadata:
   name: local-datalake
-servers: 1
-agents: 0
+servers: 1 # control plane node
+agents: 1  # worker node
 ports:
-  - port: 8080:80@loadbalancer
-  - port: 8443:443@loadbalancer
-  - port: 9000:9000@loadbalancer
-  - port: 9001:9001@loadbalancer
-volumes:
-  - volume: local-datalake-storage:/var/lib/rancher/k3s/storage
+  - port: 8080:80    # maps localhost:8080 → port 80 inside the cluster (HTTP ingress)
     nodeFilters:
-      - server:0
+      - loadbalancer
+  - port: 8443:443   # maps localhost:8443 → port 443 inside the cluster (HTTPS ingress)
+    nodeFilters:
+      - loadbalancer
+  - port: 9000:9000  # maps localhost:9000 → port 9000 inside the cluster (MinIO S3 API)
+    nodeFilters:
+      - loadbalancer
+  - port: 9001:9001  # maps localhost:9001 → port 9001 inside the cluster (MinIO web console)
+    nodeFilters:
+      - loadbalancer
+volumes:
+  - volume: local-datalake-storage:/var/lib/rancher/k3s/storage # mounts the Docker volume where k3s stores PersistentVolume data
+    nodeFilters:
+      - agent:0 # must match where pods run — moved from server:0 so PVCs work on the worker node
 options:
   k3s:
     extraArgs:
-      - arg: --disable=traefik
+      - arg: --disable=traefik # disables k3s built-in ingress controller (we manage our own)
+        nodeFilters:
+          - server:0
+      - arg: --node-taint=CriticalAddonsOnly=true:NoExecute # prevents regular pods from being scheduled on the control plane
         nodeFilters:
           - server:0
