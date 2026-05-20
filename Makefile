@@ -1,4 +1,4 @@
-.PHONY: help install deps cluster seal deploy destroy argocd-password
+.PHONY: help install deps cluster seal deploy stop start destroy argocd-password
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -18,6 +18,12 @@ up: cluster seal ## Full bootstrap: create cluster, re-seal secrets, push, and d
 
 cluster: ## Create k3d cluster + install ArgoCD + Sealed Secrets
 	bash infra/bootstrap.sh
+
+stop: ## Pause the cluster (state is preserved)
+	k3d cluster stop local-datalake
+
+start: ## Resume a paused cluster
+	k3d cluster start local-datalake
 
 destroy: ## Delete the k3d cluster
 	k3d cluster delete local-datalake
