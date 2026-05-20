@@ -20,6 +20,8 @@ data:
     -XX:+ExplicitGCInvokesConcurrent
     -XX:+HeapDumpOnOutOfMemoryError
     -XX:ReservedCodeCacheSize=512M
+    -XX:+UnlockDiagnosticVMOptions
+    -XX:G1NumCollectionsKeepPinned=10000000
     -Dfile.encoding=UTF-8
     -Djdk.attach.allowAttachSelf=true
 
