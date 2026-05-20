@@ -2,3 +2,4 @@
 /tmp/
 *.unsealed.yaml
 docs/superpowers/
+services/**/charts/
