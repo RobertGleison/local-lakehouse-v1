@@ -1,0 +1,32 @@
+image:
+  repository: trinodb/trino
+  tag: "450"
+
+# Scale to 0 when idle to reclaim ~1500MB RAM; startup takes ~30s
+replicaCount: 1
+
+service:
+  port: 8080  # Trino HTTP API and UI
+
+config:
+  queryMaxMemory: "500MB"
+  queryMaxMemoryPerNode: "256MB"
+  jvmMaxHeap: "1G"
+
+# MinIO credentials — sourced from the existing minio-credentials SealedSecret (wave 0)
+minio:
+  secretName: minio-credentials
+  accessKeyRef: root-user
+  secretKeyRef: root-password
+  endpoint: "http://minio:9000"
+
+nessie:
+  restUri: "http://nessie:19120/iceberg"
+
+resources:
+  requests:
+    memory: 1Gi
+    cpu: 200m
+  limits:
+    memory: 1500Mi
+    cpu: 1000m

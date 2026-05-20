@@ -1,0 +1,26 @@
+# apps/trino.yaml
+# Wave 3: deploy Trino (federated SQL over Iceberg — depends on Nessie and MinIO from wave 1)
+# Scale to 0 replicas when idle: kubectl scale deploy/trino -n local-datalake --replicas=0
+# Activate with: kubectl apply -f apps/trino.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trino
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"  # runs after wave 1 (MinIO, Nessie) and wave 2 (Dagster)
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RobertGleison/local-datalake
+    path: services/trino/application
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: local-datalake
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

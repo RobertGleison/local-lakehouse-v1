@@ -1,0 +1,25 @@
+# apps/cloudbeaver.yaml
+# Wave 3: deploy Cloudbeaver (web SQL editor — connects to Trino and ClickHouse)
+# Activate with: kubectl apply -f apps/cloudbeaver.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cloudbeaver
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"  # runs alongside Trino and ClickHouse
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RobertGleison/local-datalake
+    path: services/cloudbeaver/application
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: local-datalake
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

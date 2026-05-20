@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trino
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: trino
+  template:
+    metadata:
+      labels:
+        app: trino
+    spec:
+      containers:
+        - name: trino
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          env:
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.secretName }}
+                  key: {{ .Values.minio.accessKeyRef }}
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.minio.secretName }}
+                  key: {{ .Values.minio.secretKeyRef }}
+          ports:
+            - containerPort: {{ .Values.service.port }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: trino-config
+              mountPath: /etc/trino/config.properties
+              subPath: config.properties
+            - name: trino-config
+              mountPath: /etc/trino/jvm.config
+              subPath: jvm.config
+            - name: trino-config
+              mountPath: /etc/trino/node.properties
+              subPath: node.properties
+            - name: trino-config
+              mountPath: /etc/trino/catalog/iceberg.properties
+              subPath: iceberg.properties
+      volumes:
+        - name: trino-config
+          configMap:
+            name: trino-config

@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: trino-config
+  namespace: {{ .Release.Namespace }}
+data:
+  config.properties: |
+    coordinator=true
+    node-scheduler.include-coordinator=true
+    http-server.http.port={{ .Values.service.port }}
+    discovery.uri=http://localhost:{{ .Values.service.port }}
+    query.max-memory={{ .Values.config.queryMaxMemory }}
+    query.max-memory-per-node={{ .Values.config.queryMaxMemoryPerNode }}
+
+  jvm.config: |
+    -server
+    -Xmx{{ .Values.config.jvmMaxHeap }}
+    -XX:+UseG1GC
+    -XX:G1HeapRegionSize=32M
+    -XX:+ExplicitGCInvokesConcurrent
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:ReservedCodeCacheSize=512M
+    -Dfile.encoding=UTF-8
+    -Djdk.attach.allowAttachSelf=true
+
+  node.properties: |
+    node.environment=production
+    node.id=trino-node-1
+    node.data-dir=/var/trino/data
+
+  iceberg.properties: |
+    connector.name=iceberg
+    iceberg.catalog.type=rest
+    iceberg.rest-catalog.uri={{ .Values.nessie.restUri }}
+    fs.native-s3.enabled=true
+    s3.endpoint={{ .Values.minio.endpoint }}
+    s3.region=us-east-1
+    s3.aws-access-key=${ENV:MINIO_ACCESS_KEY}
+    s3.aws-secret-key=${ENV:MINIO_SECRET_KEY}
+    s3.path-style-access=true
+    s3.ssl.enabled=false

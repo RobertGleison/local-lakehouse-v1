@@ -1,0 +1,6 @@
+apiVersion: v2
+name: trino
+description: Trino single-node query engine — federated SQL over Bronze/Silver/Gold Iceberg tables via Nessie
+type: application
+version: 0.1.0
+appVersion: "latest"

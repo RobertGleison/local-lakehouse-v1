@@ -1,0 +1,6 @@
+apiVersion: v2
+name: cloudbeaver
+description: Cloudbeaver web SQL editor — browser UI for querying Trino and ClickHouse
+type: application
+version: 0.1.0
+appVersion: "latest"

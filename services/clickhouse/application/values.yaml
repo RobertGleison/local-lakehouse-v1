@@ -1,0 +1,22 @@
+image:
+  repository: clickhouse/clickhouse-server
+  tag: latest
+
+# Scale to 0 when idle to reclaim ~800MB RAM; PVC preserves data across scale events
+replicaCount: 1
+
+service:
+  httpPort: 8123   # HTTP interface (used by Cloudbeaver and the Dagster load asset)
+  nativePort: 9000 # Native TCP protocol
+
+persistence:
+  storageClassName: local-path  # k3s built-in provisioner
+  size: 10Gi
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 100m
+  limits:
+    memory: 1Gi
+    cpu: 1000m

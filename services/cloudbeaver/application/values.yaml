@@ -1,0 +1,20 @@
+image:
+  repository: dbeaver/cloudbeaver
+  tag: latest
+
+replicaCount: 1
+
+service:
+  port: 8978  # Cloudbeaver web UI
+
+persistence:
+  storageClassName: local-path  # k3s built-in provisioner; persists JDBC connections and query history
+  size: 1Gi
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+  limits:
+    memory: 512Mi
+    cpu: 500m

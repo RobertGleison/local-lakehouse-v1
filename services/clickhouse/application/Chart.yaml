@@ -1,0 +1,6 @@
+apiVersion: v2
+name: clickhouse
+description: ClickHouse OLAP engine — sub-second aggregation queries on the Gold layer loaded by Dagster
+type: application
+version: 0.1.0
+appVersion: "latest"

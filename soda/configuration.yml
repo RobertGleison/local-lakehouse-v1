@@ -1,0 +1,5 @@
+# Soda Core configuration for DuckDB — used by build_soda_check() in pipelines/quality/soda_checks.py
+# The path must match the DuckDB file used by the Dagster DuckDB resource.
+data_source duckdb:
+  type: duckdb
+  path: /dagster/duckdb.db

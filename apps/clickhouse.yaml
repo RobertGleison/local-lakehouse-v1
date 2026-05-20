@@ -1,0 +1,27 @@
+# apps/clickhouse.yaml
+# Wave 3: deploy ClickHouse (OLAP engine — receives Gold layer from Dagster load asset)
+# Scale to 0 replicas when idle: kubectl scale deploy/clickhouse -n local-datalake --replicas=0
+# Data persists on PVC across scale events — safe to scale to 0.
+# Activate with: kubectl apply -f apps/clickhouse.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: clickhouse
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"  # runs after wave 2 (Dagster) which populates Gold tables
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RobertGleison/local-datalake
+    path: services/clickhouse/application
+    targetRevision: main
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: local-datalake
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
