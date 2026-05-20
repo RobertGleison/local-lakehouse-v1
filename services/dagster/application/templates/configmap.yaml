@@ -4,5 +4,10 @@ metadata:
   name: dagster-config
   namespace: {{ .Release.Namespace }}
 data:
+  dagster.yaml: |
+    storage:
+      sqlite:
+        base_dir: /dagster/storage
+
   workspace.yaml: |
     load_from: []
