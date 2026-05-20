@@ -36,6 +36,8 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            - name: trino-data
+              mountPath: /var/trino
             - name: trino-config
               mountPath: /etc/trino/config.properties
               subPath: config.properties
@@ -49,6 +51,8 @@ spec:
               mountPath: /etc/trino/catalog/iceberg.properties
               subPath: iceberg.properties
       volumes:
+        - name: trino-data
+          emptyDir: {}
         - name: trino-config
           configMap:
             name: trino-config
