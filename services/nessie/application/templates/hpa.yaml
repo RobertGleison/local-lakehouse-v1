@@ -17,5 +17,5 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilizationPercentage: {{ .Values.hpa.targetCPUUtilizationPercentage }}
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
 {{- end }}
