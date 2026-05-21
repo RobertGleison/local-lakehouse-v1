@@ -4,33 +4,80 @@ A local Kubernetes-based datalake for learning purposes. Runs entirely on your l
 
 ## Architecture
 
+```mermaid
+flowchart TB
+    Dev["💻 Developer"]
+    GH["GitHub\n(source of truth)"]
+
+    Dev -->|git push| GH
+    GH -->|watched by| ArgoCD
+
+    subgraph k3d["k3d Cluster — local-datalake"]
+        subgraph argocd_ns["namespace: argocd"]
+            ArgoCD["ArgoCD\nGitOps controller"]
+        end
+
+        subgraph kube_ns["namespace: kube-system"]
+            SS["Sealed Secrets\ncontroller"]
+        end
+
+        subgraph dl_ns["namespace: local-datalake"]
+            subgraph storage["Storage & Catalog"]
+                MinIO["MinIO\nS3 storage\n:9000 · :9001"]
+                Nessie["Nessie\nIceberg catalog\n:19120"]
+            end
+            subgraph query["Query & Processing"]
+                Trino["Trino\nDistributed SQL\n:8080"]
+                ClickHouse["ClickHouse\nOLAP\n:8123"]
+            end
+            subgraph orchestration["Orchestration"]
+                Dagster["Dagster\nPipelines\n:3000"]
+                CloudBeaver["CloudBeaver\nSQL UI\n:8978"]
+            end
+            subgraph observability["Observability"]
+                Prometheus["Prometheus\nMetrics"]
+                Loki["Loki\nLogs\n:3100"]
+                Promtail["Promtail\nLog shipper"]
+                Grafana["Grafana\nDashboards\n:3000"]
+            end
+        end
+    end
+
+    ArgoCD -->|wave 0| SS
+    ArgoCD -->|wave 1| MinIO
+    ArgoCD -->|wave 2| Nessie
+    ArgoCD -->|wave 3| Trino & ClickHouse & CloudBeaver
+    ArgoCD -->|wave 4| Dagster
+    ArgoCD -->|wave 5| Prometheus & Loki
+    ArgoCD -->|wave 6| Promtail & Grafana
+
+    Nessie -->|catalogs tables in| MinIO
+    Loki -->|stores logs in| MinIO
+    Promtail -->|ships logs to| Loki
+    Prometheus -->|metrics| Grafana
+    Loki -->|logs| Grafana
 ```
-┌──────────────────────────────────────────────────────────┐
-│                       k3d Cluster                        │
-│                                                          │
-│  Storage & Catalog          Query & Processing           │
-│  ┌──────────┐  ┌─────────┐  ┌───────┐  ┌────────────┐  │
-│  │  MinIO   │  │ Nessie  │  │ Trino │  │ ClickHouse │  │
-│  │ (S3)     │  │(catalog)│  │       │  │            │  │
-│  └──────────┘  └─────────┘  └───────┘  └────────────┘  │
-│                                                          │
-│  Orchestration              Observability                │
-│  ┌──────────┐  ┌─────────┐  ┌────────┐  ┌──────────┐   │
-│  │ Dagster  │  │CloudBvr │  │Grafana │  │Prometheus│   │
-│  │(pipeline)│  │(SQL UI) │  │(dash.) │  │(metrics) │   │
-│  └──────────┘  └─────────┘  └────────┘  └──────────┘   │
-│                                                          │
-│  ┌──────────┐  ┌─────────┐                              │
-│  │   Loki   │  │Promtail │                              │
-│  │  (logs)  │  │(shipper)│                              │
-│  └──────────┘  └─────────┘                              │
-│                                                          │
-│  ┌──────────────────────────────────────┐               │
-│  │               ArgoCD                 │               │
-│  │   (watches GitHub, syncs cluster)    │               │
-│  └──────────────────────────────────────┘               │
-└──────────────────────────────────────────────────────────┘
+
+### GitOps Flow
+
+```mermaid
+sequenceDiagram
+    participant Dev as Developer
+    participant GH as GitHub
+    participant ArgoCD as ArgoCD
+    participant K8s as k3d Cluster
+
+    Dev->>Dev: make seal (encrypt secrets)
+    Dev->>GH: git push (sealed secrets + manifests)
+    GH-->>ArgoCD: detects diff
+    ArgoCD->>K8s: wave 0 — Sealed Secrets
+    ArgoCD->>K8s: wave 1-2 — MinIO, Nessie
+    ArgoCD->>K8s: wave 3-4 — Trino, ClickHouse, Dagster
+    ArgoCD->>K8s: wave 5-6 — Prometheus, Loki, Grafana
+    K8s-->>Dev: services available on localhost
 ```
+
+## Services
 
 | Service | Role | Port |
 |---------|------|------|
@@ -51,37 +98,62 @@ A local Kubernetes-based datalake for learning purposes. Runs entirely on your l
 Make sure Docker is installed and running, then install the rest with Homebrew:
 
 ```bash
-brew install k3d       # creates k3s clusters in Docker
-brew install kubectl   # Kubernetes CLI
-brew install helm      # Kubernetes package manager
-brew install kubeseal  # encrypts secrets before committing
+make deps
+# equivalent to: brew install k3d kubectl helm kubeseal
 ```
 
 ## Quickstart
 
 ```bash
 # 1. Bootstrap the cluster (run once)
-bash infra/bootstrap.sh
+make up
 
-# 2. Seal your secrets (requires cluster + sealed-secrets controller running)
-bash secrets/seal.sh
-
-# 3. Commit and push sealed secrets to GitHub
-git add secrets/*.yaml && git commit -m "feat: add sealed secrets" && git push
-
-# 4. Deploy all services via ArgoCD
-kubectl apply -f apps/
+# 2. Access the ArgoCD UI
+make argocd-ui        # port-forwards to https://localhost:8080
+make argocd-password  # prints the admin password
 ```
 
 ArgoCD pulls from GitHub and deploys all services in sync-wave order (storage → catalog → query → orchestration → observability).
 
-## Accessing services
+## Makefile Reference
+
+```mermaid
+flowchart LR
+    deps["make deps\nInstall brew tools"]
+    up["make up\nFull bootstrap"]
+    cluster["make cluster\nCreate k3d cluster\n+ ArgoCD + Sealed Secrets"]
+    seal["make seal\nEncrypt secrets\nwith kubeseal"]
+    deploy["make deploy\nApply ArgoCD apps"]
+    destroy["make destroy\nDelete k3d cluster"]
+    argocd_ui["make argocd-ui\nPort-forward to :8080"]
+    argocd_pw["make argocd-password\nPrint admin password"]
+
+    deps --> up
+    up --> cluster
+    up --> seal
+    seal --> deploy
+    cluster --> argocd_ui
+    cluster --> argocd_pw
+```
+
+| Command | Description |
+|---------|-------------|
+| `make help` | List all available commands |
+| `make deps` | Install prerequisites via Homebrew (macOS only) |
+| `make up` | Full bootstrap: create cluster → seal secrets → push → deploy |
+| `make cluster` | Create k3d cluster + install ArgoCD + Sealed Secrets |
+| `make seal` | Encrypt secrets with kubeseal (run before committing secrets) |
+| `make deploy` | Apply all ArgoCD Application manifests |
+| `make destroy` | Delete the k3d cluster |
+| `make argocd-ui` | Port-forward ArgoCD UI to `https://localhost:8080` |
+| `make argocd-password` | Print the ArgoCD admin password |
+
+## Accessing Services
 
 **ArgoCD UI:**
 ```bash
-kubectl port-forward svc/argocd-server -n argocd 8080:443
-# Open https://localhost:8080  |  Username: admin
-kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
+make argocd-ui        # port-forward to https://localhost:8080
+make argocd-password  # print admin password
 ```
 
 **MinIO UI:** `http://localhost:9001` (minioadmin / minioadmin123)
@@ -96,17 +168,9 @@ kubectl port-forward svc/grafana 3000:80 -n local-datalake
 kubectl port-forward svc/dagster-dagster-webserver 3000:80 -n local-datalake
 ```
 
-**Trino:** `http://localhost:8080`
+**Trino:** `http://localhost:8080` · **ClickHouse:** `http://localhost:8123` · **CloudBeaver:** `http://localhost:8978` · **Nessie API:** `http://localhost:19120`
 
-**ClickHouse:** `http://localhost:8123`
-
-**CloudBeaver:** `http://localhost:8978`
-
-**Nessie API:** `http://localhost:19120`
-
-## Deployment sync-waves
-
-Services deploy in order via ArgoCD sync-waves:
+## Deployment Sync-Waves
 
 | Wave | Services |
 |------|---------|
@@ -118,20 +182,7 @@ Services deploy in order via ArgoCD sync-waves:
 | 5 | Prometheus, Loki |
 | 6 | Promtail, Grafana |
 
-## Project structure
-
-```
-apps/               ArgoCD Application manifests (one per service)
-infra/              Cluster setup (k3d config, bootstrap script)
-secrets/            Secret management (seal.sh + sealed secret manifests)
-services/           One directory per service
-  <service>/
-    application/    Helm chart (Chart.yaml, values.yaml, templates/)
-    infrastructure/ Terragrunt placeholder (N/A locally, used in cloud envs)
-docs/               Architecture Decision Records and implementation plans
-```
-
-## Grafana dashboards
+## Grafana Dashboards
 
 Six dashboards are pre-provisioned at startup:
 
@@ -144,9 +195,22 @@ Six dashboards are pre-provisioned at startup:
 | Trino | Query counts and JVM metrics |
 | Kubernetes Namespaces | Per-namespace resource usage |
 
-## Adding a new service
+## Project Structure
 
-Use the `/new-service` skill in Claude Code — it scaffolds the full structure automatically.
+```
+apps/               ArgoCD Application manifests (one per service)
+docs/               Architecture Decision Records and implementation plans
+infra/              Cluster setup (k3d config, bootstrap script)
+secrets/            Secret management (seal.sh + sealed secret manifests)
+services/           One directory per service
+  <service>/
+    application/    Helm chart (Chart.yaml, values.yaml, templates/)
+    infrastructure/ Terragrunt placeholder (N/A locally, used in cloud envs)
+```
+
+## Adding a New Service
+
+Use the `/new-service` skill in Claude Code — it scaffolds the Helm chart structure and ArgoCD Application manifest automatically.
 
 ## License
 
