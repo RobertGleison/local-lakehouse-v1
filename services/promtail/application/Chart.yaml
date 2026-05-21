@@ -1,0 +1,9 @@
+apiVersion: v2
+name: promtail-stack
+description: Promtail log shipper — DaemonSet that tails pod logs and forwards them to Loki
+type: application
+version: 0.1.0
+dependencies:
+  - name: promtail
+    version: "6.17.1"
+    repository: https://grafana.github.io/helm-charts
