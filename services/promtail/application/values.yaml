@@ -1,0 +1,20 @@
+promtail:
+  config:
+    clients:
+      - url: http://loki-loki.local-datalake.svc.cluster.local:3100/loki/api/v1/push
+
+  # Tolerate the control-plane taint so Promtail runs on all nodes
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+      effect: NoExecute
+    - operator: Exists
+      effect: NoSchedule
+
+  resources:
+    requests:
+      memory: 64Mi
+      cpu: 50m
+    limits:
+      memory: 128Mi
+      cpu: 200m

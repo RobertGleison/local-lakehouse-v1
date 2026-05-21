@@ -22,6 +22,19 @@ kubectl create secret generic minio-credentials \
   --format yaml \
   > "$SCRIPT_DIR/minio-credentials.yaml"
 
+echo "==> Sealing grafana-admin..."
+kubectl create secret generic grafana-admin \
+  --namespace local-datalake \
+  --from-literal=admin-user=admin \
+  --from-literal=admin-password=admin \
+  --dry-run=client -o yaml \
+| kubeseal \
+  --controller-name sealed-secrets \
+  --controller-namespace kube-system \
+  --scope namespace-wide \
+  --format yaml \
+  > "$SCRIPT_DIR/grafana-admin.yaml"
+
 echo ""
 echo "Sealed secrets written to secrets/"
 echo ""

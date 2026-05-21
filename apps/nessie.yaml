@@ -14,7 +14,7 @@ spec:
   source:
     repoURL: https://github.com/RobertGleison/local-datalake
     path: services/nessie/application   # ArgoCD auto-detects Helm when Chart.yaml is present
-    targetRevision: main
+    targetRevision: feat/phase-2-dagster-deployment
   destination:
     server: https://kubernetes.default.svc
     namespace: local-datalake

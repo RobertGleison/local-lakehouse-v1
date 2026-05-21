@@ -1,0 +1,52 @@
+prometheus:
+  server:
+    retention: 15d
+    persistentVolume:
+      enabled: true
+      size: 5Gi
+      storageClass: local-path
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+      limits:
+        memory: 512Mi
+        cpu: 500m
+
+  # Disable unused bundled components to reduce RAM
+  alertmanager:
+    enabled: false
+  prometheus-pushgateway:
+    enabled: false
+
+  # Enable built-in exporters for cluster-level metrics
+  kube-state-metrics:
+    enabled: true
+  prometheus-node-exporter:
+    enabled: true
+
+  # Custom scrape jobs added alongside the default kubernetes scrape configs.
+  # Note: some endpoints (Trino JMX, ClickHouse port 9363, Dagster /metrics)
+  # may show as DOWN until those services expose Prometheus-compatible endpoints.
+  # MinIO /minio/v2/metrics/cluster works by default.
+  extraScrapeConfigs: |
+    - job_name: minio
+      static_configs:
+        - targets:
+            - minio.local-datalake.svc.cluster.local:9000
+      metrics_path: /minio/v2/metrics/cluster
+    - job_name: dagster
+      static_configs:
+        - targets:
+            - dagster.local-datalake.svc.cluster.local:3000
+      metrics_path: /metrics
+    - job_name: trino
+      static_configs:
+        - targets:
+            - trino.local-datalake.svc.cluster.local:8080
+      metrics_path: /v1/jmx/mbean/java.lang:type=Memory
+    - job_name: clickhouse
+      static_configs:
+        - targets:
+            - clickhouse.local-datalake.svc.cluster.local:9363
+      metrics_path: /metrics

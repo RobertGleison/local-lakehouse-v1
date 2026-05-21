@@ -1,0 +1,72 @@
+grafana:
+  admin:
+    existingSecret: grafana-admin
+    userKey: admin-user
+    passwordKey: admin-password
+
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 100m
+    limits:
+      memory: 256Mi
+      cpu: 500m
+
+  persistence:
+    enabled: true
+    size: 1Gi
+    storageClassName: local-path
+
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          url: http://prometheus-server.local-datalake.svc.cluster.local:80
+          access: proxy
+          isDefault: true
+        - name: Loki
+          type: loki
+          url: http://loki-loki.local-datalake.svc.cluster.local:3100
+          access: proxy
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: default
+          orgId: 1
+          folder: ""
+          type: file
+          disableDeletion: false
+          editable: true
+          options:
+            path: /var/lib/grafana/dashboards/default
+
+  dashboards:
+    default:
+      kubernetes-cluster:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus
+      node-exporter:
+        gnetId: 1860
+        revision: 37
+        datasource: Prometheus
+      minio:
+        gnetId: 13502
+        revision: 26
+        datasource: Prometheus
+      loki-logs:
+        gnetId: 13639
+        revision: 2
+        datasource: Loki
+      trino:
+        gnetId: 14630
+        revision: 2
+        datasource: Prometheus
+      kubernetes-namespaces:
+        gnetId: 7249
+        revision: 1
+        datasource: Prometheus

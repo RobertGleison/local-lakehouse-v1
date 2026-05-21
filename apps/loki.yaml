@@ -1,19 +1,19 @@
-# apps/trino.yaml
-# Wave 3: deploy Trino (federated SQL over Iceberg — depends on Nessie and MinIO from wave 1)
-# Scale to 0 replicas when idle: kubectl scale deploy/trino -n local-datalake --replicas=0
-# Activate with: kubectl apply -f apps/trino.yaml
+# apps/loki.yaml
+# Wave 5: deploy Loki log aggregation (depends on MinIO from wave 1 for S3 backend)
+# Stores logs in MinIO loki-logs bucket — no PVC required.
+# Activate with: kubectl apply -f apps/loki.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: trino
+  name: loki
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "3"  # runs after wave 1 (MinIO, Nessie) and wave 2 (Dagster)
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
   source:
     repoURL: https://github.com/RobertGleison/local-datalake
-    path: services/trino/application
+    path: services/loki/application
     targetRevision: feat/phase-2-dagster-deployment
   destination:
     server: https://kubernetes.default.svc

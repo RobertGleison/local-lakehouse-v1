@@ -19,7 +19,9 @@ spec:
           command:
             - /bin/sh
             - -c
-            - cp /dagster-config/workspace.yaml {{ .Values.dagsterHome }}/workspace.yaml
+            - |
+              cp /dagster-config/workspace.yaml {{ .Values.dagsterHome }}/workspace.yaml
+              cp /dagster-config/dagster.yaml {{ .Values.dagsterHome }}/dagster.yaml
           volumeMounts:
             - name: dagster-home
               mountPath: {{ .Values.dagsterHome }}
@@ -28,7 +30,7 @@ spec:
       containers:
         - name: webserver
           image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
-          command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "{{ .Values.service.webserverPort }}"]
+          command: ["dagster-webserver", "-h", "0.0.0.0", "-p", "{{ .Values.service.webserverPort }}", "-w", "{{ .Values.dagsterHome }}/workspace.yaml"]
           env:
             - name: DAGSTER_HOME
               value: {{ .Values.dagsterHome }}

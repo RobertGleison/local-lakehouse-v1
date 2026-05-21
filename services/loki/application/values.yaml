@@ -1,0 +1,85 @@
+loki:
+  deploymentMode: SingleBinary
+
+  loki:
+    auth_enabled: false
+    commonConfig:
+      replication_factor: 1
+    schemaConfig:
+      configs:
+        - from: "2024-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+    storage:
+      type: s3
+      bucketNames:
+        chunks: loki-logs
+        ruler: loki-logs
+        admin: loki-logs
+      s3:
+        endpoint: minio.local-datalake.svc.cluster.local:9000
+        region: us-east-1
+        secretAccessKey: ${MINIO_ROOT_PASSWORD}
+        accessKeyId: ${MINIO_ROOT_USER}
+        insecure: true
+        s3ForcePathStyle: true
+    limits_config:
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+
+  singleBinary:
+    replicas: 1
+    extraEnv:
+      - name: MINIO_ROOT_USER
+        valueFrom:
+          secretKeyRef:
+            name: minio-credentials
+            key: root-user
+      - name: MINIO_ROOT_PASSWORD
+        valueFrom:
+          secretKeyRef:
+            name: minio-credentials
+            key: root-password
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 100m
+      limits:
+        memory: 256Mi
+        cpu: 500m
+
+  # Disable scalable-mode components — single-binary uses one pod for all roles
+  backend:
+    replicas: 0
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+
+  # Disable self-monitoring to avoid GrafanaAgent operator dependency
+  monitoring:
+    selfMonitoring:
+      enabled: false
+      grafanaAgent:
+        installOperator: false
+    lokiCanary:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+    dashboards:
+      enabled: false
+    rules:
+      enabled: false
+    alerts:
+      enabled: false
+
+  test:
+    enabled: false
+
+  # Gateway adds an nginx proxy layer — not needed in single-binary mode
+  gateway:
+    enabled: false

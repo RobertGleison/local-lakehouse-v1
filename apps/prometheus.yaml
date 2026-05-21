@@ -1,19 +1,20 @@
-# apps/trino.yaml
-# Wave 3: deploy Trino (federated SQL over Iceberg — depends on Nessie and MinIO from wave 1)
-# Scale to 0 replicas when idle: kubectl scale deploy/trino -n local-datalake --replicas=0
-# Activate with: kubectl apply -f apps/trino.yaml
+# apps/prometheus.yaml
+# Wave 5: deploy Prometheus metrics collection (no Phase 4 dependencies)
+# Scrapes MinIO, Dagster, Trino, ClickHouse, node-exporter, kube-state-metrics.
+# Data persists on a 5Gi PVC — safe to restart.
+# Activate with: kubectl apply -f apps/prometheus.yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: trino
+  name: prometheus
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "3"  # runs after wave 1 (MinIO, Nessie) and wave 2 (Dagster)
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
   source:
     repoURL: https://github.com/RobertGleison/local-datalake
-    path: services/trino/application
+    path: services/prometheus/application
     targetRevision: feat/phase-2-dagster-deployment
   destination:
     server: https://kubernetes.default.svc
