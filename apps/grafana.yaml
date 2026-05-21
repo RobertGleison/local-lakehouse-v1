@@ -1,0 +1,25 @@
+# apps/grafana.yaml
+# Wave 6: deploy Grafana dashboards (depends on Prometheus and Loki data sources).
+# Activate with: kubectl apply -f apps/grafana.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RobertGleison/local-datalake
+    path: services/grafana/application
+    targetRevision: feat/phase-2-dagster-deployment
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: local-datalake
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
