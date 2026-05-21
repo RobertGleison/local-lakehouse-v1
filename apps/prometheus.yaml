@@ -1,0 +1,27 @@
+# apps/prometheus.yaml
+# Wave 5: deploy Prometheus metrics collection (no Phase 4 dependencies)
+# Scrapes MinIO, Dagster, Trino, ClickHouse, node-exporter, kube-state-metrics.
+# Data persists on a 5Gi PVC — safe to restart.
+# Activate with: kubectl apply -f apps/prometheus.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/RobertGleison/local-datalake
+    path: services/prometheus/application
+    targetRevision: feat/phase-2-dagster-deployment
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: local-datalake
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,7 +1,5 @@
 apiVersion: v2
 name: loki-stack
-description: Loki log aggregation — collects pod logs via Promtail and stores them in MinIO (loki-logs bucket)
-type: application
 version: 0.1.0
 dependencies:
   - name: loki
