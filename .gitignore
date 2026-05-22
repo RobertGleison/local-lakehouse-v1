@@ -3,3 +3,6 @@
 *.unsealed.yaml
 docs/superpowers/
 services/**/charts/
+.venv
+main.py
+__pycache__/

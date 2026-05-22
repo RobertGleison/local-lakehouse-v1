@@ -1,4 +1,4 @@
-.PHONY: help install deps cluster seal deploy stop start destroy argocd-password
+.PHONY: help install deps cluster seal deploy stop start destroy argocd-password validate
 
 help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -32,6 +32,11 @@ destroy: ## Delete the k3d cluster
 
 seal: ## Encrypt secrets with kubeseal (run before committing secrets)
 	bash secrets/seal.sh
+
+# ── Validation ───────────────────────────────────────────────────────────────
+
+validate: ## Validate ArgoCD service registry JSON
+	@python3 -m json.tool argocd/services/services.json > /dev/null && echo "argocd/services/services.json is valid"
 
 # ── Services ─────────────────────────────────────────────────────────────────
 

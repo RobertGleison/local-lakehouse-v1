@@ -1,0 +1,59 @@
+{
+  "applications": [
+    {
+      "service": "local-datalake-secrets",
+      "path": "secrets",
+      "wave": "0"
+    },
+    {
+      "service": "minio",
+      "path": "services/minio/application",
+      "wave": "1"
+    },
+    {
+      "service": "nessie",
+      "path": "services/nessie/application",
+      "wave": "1"
+    },
+    {
+      "service": "clickhouse",
+      "path": "services/clickhouse/application",
+      "wave": "3"
+    },
+    {
+      "service": "cloudbeaver",
+      "path": "services/cloudbeaver/application",
+      "wave": "3"
+    },
+    {
+      "service": "trino",
+      "path": "services/trino/application",
+      "wave": "3"
+    },
+    {
+      "service": "dagster",
+      "path": "services/dagster/application",
+      "wave": "2"
+    },
+    {
+      "service": "prometheus",
+      "path": "services/prometheus/application",
+      "wave": "5"
+    },
+    {
+      "service": "loki",
+      "path": "services/loki/application",
+      "wave": "5"
+    },
+    {
+      "service": "promtail",
+      "path": "services/promtail/application",
+      "wave": "6"
+    },
+    {
+      "service": "grafana",
+      "path": "services/grafana/application",
+      "wave": "6"
+    }
+  ]
+}

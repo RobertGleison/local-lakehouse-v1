@@ -17,7 +17,7 @@ spec:
               repoURL: https://github.com/RobertGleison/local-datalake
               revision: main
               files:
-                - path: argocd/services/*.json
+                - path: argocd/services/services.json
   template:
     metadata:
       name: '{{ .service }}'
@@ -25,7 +25,7 @@ spec:
       annotations:
         argocd.argoproj.io/sync-wave: '{{ .wave }}'
     spec:
-      project: local-datalake
+      project: infrastructure
       source:
         repoURL: https://github.com/RobertGleison/local-datalake
         path: '{{ .path }}'
