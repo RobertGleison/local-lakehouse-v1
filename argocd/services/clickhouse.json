@@ -1,0 +1,1 @@
+{ "service": "clickhouse", "path": "services/clickhouse/application", "wave": "3" }

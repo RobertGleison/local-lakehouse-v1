@@ -1,0 +1,41 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: local-datalake
+  namespace: argocd
+spec:
+  goTemplate: true
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/RobertGleison/local-datalake
+              revision: main
+              files:
+                - path: argocd/clusters/*.json
+          - git:
+              repoURL: https://github.com/RobertGleison/local-datalake
+              revision: main
+              files:
+                - path: argocd/services/*.json
+  template:
+    metadata:
+      name: '{{ .service }}'
+      namespace: argocd
+      annotations:
+        argocd.argoproj.io/sync-wave: '{{ .wave }}'
+    spec:
+      project: local-datalake
+      source:
+        repoURL: https://github.com/RobertGleison/local-datalake
+        path: '{{ .path }}'
+        targetRevision: main
+      destination:
+        server: '{{ .server }}'
+        namespace: local-datalake
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true

@@ -198,7 +198,7 @@ Six dashboards are pre-provisioned at startup:
 ## Project Structure
 
 ```
-apps/               ArgoCD Application manifests (one per service)
+argocd/appsets/               ArgoCD Application manifests (one per service)
 docs/               Architecture Decision Records and implementation plans
 infra/              Cluster setup (k3d config, bootstrap script)
 secrets/            Secret management (seal.sh + sealed secret manifests)

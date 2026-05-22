@@ -14,7 +14,7 @@ up: cluster seal ## Full bootstrap: create cluster, re-seal secrets, push, and d
 	git add secrets/minio-credentials.yaml
 	git commit -m "chore: re-seal secrets for new cluster"
 	git push
-	kubectl apply -f apps/
+	kubectl apply -f argocd/appsets/
 
 cluster: ## Create k3d cluster + install ArgoCD + Sealed Secrets
 	bash infra/bootstrap.sh
@@ -36,7 +36,7 @@ seal: ## Encrypt secrets with kubeseal (run before committing secrets)
 # ── Services ─────────────────────────────────────────────────────────────────
 
 deploy: ## Apply all ArgoCD applications (MinIO, Nessie, Secrets)
-	kubectl apply -f apps/
+	kubectl apply -f argocd/appsets/
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

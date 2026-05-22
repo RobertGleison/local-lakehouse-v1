@@ -50,7 +50,7 @@ Services deploy in dependency order:
 | 5 | Prometheus, Loki | Metrics/logs collection before dashboards |
 | 6 | Promtail, Grafana | Shippers and dashboards come last |
 
-Set `argocd.argoproj.io/sync-wave` annotation in `apps/<service>.yaml` to control ordering.
+Set `argocd.argoproj.io/sync-wave` annotation in `argocd/appsets/<service>.yaml` to control ordering.
 
 ---
 
@@ -64,7 +64,7 @@ services/<name>/
   infrastructure/       Terragrunt placeholder — unused locally, for cloud deployments
 ```
 
-ArgoCD Application manifests live in `apps/<name>.yaml` and point to `services/<name>/application`.
+ArgoCD Application manifests live in `argocd/appsets/<name>.yaml` and point to `services/<name>/application`.
 
 ---
 
@@ -97,7 +97,7 @@ ArgoCD Application manifests live in `apps/<name>.yaml` and point to `services/<
 ## Common Operations
 
 ```bash
-make deploy          # Re-apply all ArgoCD apps (after adding a new apps/*.yaml)
+make deploy          # Re-apply all ArgoCD apps (after adding a new argocd/appsets/*.yaml)
 make argocd-ui       # Port-forward ArgoCD to https://localhost:8080
 make argocd-password # Print the ArgoCD admin password
 make seal            # Re-encrypt secrets (after rotating credentials)
@@ -121,5 +121,5 @@ make seal            # Re-encrypt secrets (after rotating credentials)
 | `infra/bootstrap.sh` | One-time cluster setup (k3d + ArgoCD + Sealed Secrets) |
 | `infra/cluster.yaml` | k3d cluster config (nodes, port mappings, volumes) |
 | `secrets/seal.sh` | Encrypts raw credentials into SealedSecret manifests |
-| `apps/*.yaml` | ArgoCD Application manifests — one per service |
+| `argocd/appsets/*.yaml` | ArgoCD Application manifests — one per service |
 | `Makefile` | All common operations; run `make help` for a summary |

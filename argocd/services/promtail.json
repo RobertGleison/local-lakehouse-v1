@@ -1,0 +1,1 @@
+{ "service": "promtail", "path": "services/promtail/application", "wave": "6" }

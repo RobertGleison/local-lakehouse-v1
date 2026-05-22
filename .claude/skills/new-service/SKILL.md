@@ -26,7 +26,7 @@ services/
     infrastructure/
       terragrunt.hcl      ← placeholder for local dev; real Terragrunt config for cloud envs
 
-apps/
+argocd/appsets/
   <service>.yaml          ← ArgoCD Application — points ArgoCD at the Helm chart
 ```
 
@@ -38,7 +38,7 @@ apps/
 | `values.yaml` | All config knobs. Templates read from here via `{{ .Values.xxx }}`. |
 | `templates/*.yaml` | The actual Kubernetes resources (Deployment, Service, PVC, etc.). |
 | `infrastructure/terragrunt.hcl` | Cloud infra (S3, IAM, DNS). Empty locally — k3s handles storage via PVC. |
-| `apps/<service>.yaml` | ArgoCD Application. Tells ArgoCD where the chart lives and where to deploy it. |
+| `argocd/appsets/<service>.yaml` | ArgoCD Application. Tells ArgoCD where the chart lives and where to deploy it. |
 
 ## Step 1: Create the Helm chart
 
@@ -81,7 +81,7 @@ Create `services/<service>/infrastructure/terragrunt.hcl` with a comment explain
 
 ## Step 5: Create the ArgoCD Application
 
-Create `apps/<service>.yaml`:
+Create `argocd/appsets/<service>.yaml`:
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -111,10 +111,10 @@ spec:
 
 If the cluster is running:
 ```bash
-kubectl apply -f apps/<service>.yaml
+kubectl apply -f argocd/appsets/<service>.yaml
 ```
 
-ArgoCD will pull the chart from git and deploy it. For secrets the service depends on, use wave `"0"` in a separate `apps/<service>-secrets.yaml` and ensure they deploy first.
+ArgoCD will pull the chart from git and deploy it. For secrets the service depends on, use wave `"0"` in a separate `argocd/appsets/<service>-secrets.yaml` and ensure they deploy first.
 
 ## Sync waves
 

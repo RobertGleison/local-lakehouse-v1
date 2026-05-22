@@ -17,7 +17,7 @@ services/<service>/
     terragrunt.hcl      # placeholder locally; real Terragrunt config for cloud
 ```
 
-And an ArgoCD Application at `apps/<service>.yaml` pointing to `services/<service>/application`.
+And an ArgoCD Application at `argocd/appsets/<service>.yaml` pointing to `services/<service>/application`.
 
 Use the `/new-service` skill in Claude Code to scaffold this automatically.
 
@@ -41,4 +41,4 @@ Never commit raw secrets. Use `secrets/seal.sh` to encrypt them with Sealed Secr
 2. Push to `main`
 3. ArgoCD detects the change and syncs the cluster automatically
 
-Manual sync: `kubectl apply -f apps/<service>.yaml`
+Manual sync: `kubectl apply -f argocd/appsets/<service>.yaml`

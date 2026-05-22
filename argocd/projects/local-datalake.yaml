@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: local-datalake
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  description: Local datalake — single-node k3d cluster
+  sourceRepos:
+    - https://github.com/RobertGleison/local-datalake
+  destinations:
+    - namespace: local-datalake
+      server: https://9EF9F56FD7DD38E8BACB81600EB8A98C.gr7.eu-central-1.eks.amazonaws.com
+    - namespace: argocd
+      server: https://9EF9F56FD7DD38E8BACB81600EB8A98C.gr7.eu-central-1.eks.amazonaws.com
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
