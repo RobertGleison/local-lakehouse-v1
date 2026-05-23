@@ -192,6 +192,65 @@ Six dashboards are pre-provisioned at startup:
 | Trino | Query counts and JVM metrics |
 | Kubernetes Namespaces | Per-namespace resource usage |
 
+## Observability Architecture
+
+This datalake stack separates observability data into **Logs** and **Metrics** to optimize collection, storage, and querying.
+
+### 1. Log Collection (Loki & Promtail)
+
+Loki uses a **push-based model** facilitated by **Promtail** (deployed as a DaemonSet to run on every node).
+
+```mermaid
+graph TD
+    subgraph agent-0 [Worker Node: agent:0]
+        subgraph Dagster Pod
+            D[Dagster Container] -- Writes stdout/stderr --> L1[Host Log File: /var/log/pods/...]
+        end
+        
+        subgraph Promtail Pod
+            P[Promtail DaemonSet Pod] -- Mounts read-only --> L1
+            P -- Pushes logs via HTTP --> Loki[Loki Single-Binary Pod]
+        end
+    end
+
+    subgraph Storage & Visualization
+        Loki -- Stores chunks/indexes --> MinIO[(MinIO S3: loki-logs)]
+        Grafana[Grafana] -- Queries logs --> Loki
+    end
+```
+
+*   **Host Logs**: The standard output (`stdout`/`stderr`) of all pods (like Dagster, ClickHouse, etc.) is captured by Kubernetes and written as log files on the host node at `/var/log/pods/`.
+*   **Log Shipper**: The `promtail` DaemonSet mounts `/var/log/pods/` read-only, continuously tails these files, enriches the logs with Kubernetes metadata (namespace, pod name, container name), and pushes them to `loki`.
+*   **Storage**: Loki groups log lines into streams and writes the compressed log chunks directly to MinIO (`loki-logs` bucket).
+
+### 2. Metrics Collection (Prometheus)
+
+Prometheus uses a **pull-based (scrape) model**. Instead of utilizing an agent to push data, Prometheus periodically makes HTTP `GET` requests to retrieve metrics from `/metrics` endpoints.
+
+```mermaid
+graph LR
+    Prometheus[Prometheus Server] -- Pulls /metrics via HTTP --> MinIO["MinIO (:9000)"]
+    Prometheus -- Pulls /metrics via HTTP --> Dagster["Dagster (:3000)"]
+    Prometheus -- Pulls /metrics via HTTP --> ClickHouse["ClickHouse (:9363)"]
+    Prometheus -- Pulls /metrics via HTTP --> Trino["Trino (:8080)"]
+    Prometheus -- Pulls host metrics --> NodeExporter["Node Exporter (DaemonSet)"]
+    Prometheus -- Pulls K8s stats --> KubeState["Kube State Metrics"]
+```
+
+*   **Cluster Metrics**: Prometheus employs `prometheus-node-exporter` (for physical node RAM/CPU/disk metrics) and `kube-state-metrics` (for Kubernetes resource states).
+*   **Custom Scrapers**: Explicit scrape jobs are configured in the stack to pull metrics from key components:
+    *   **MinIO**: `/minio/v2/metrics/cluster` (port 9000)
+    *   **Dagster**: `/metrics` (port 3000)
+    *   **Trino**: `/v1/jmx/mbean/java.lang:type=Memory` (port 8080)
+    *   **ClickHouse**: `/metrics` (port 9363)
+
+### 3. Summary of Observability Flow
+
+| Telemetry Type | Collector | Model | Storage Backend | Pre-configured Dashboards |
+| :--- | :--- | :--- | :--- | :--- |
+| **Logs** (Textual events) | **Promtail** (DaemonSet) | **Push** | Loki (backed by MinIO S3) | Loki Logs |
+| **Metrics** (Numeric measurements) | **Prometheus** | **Pull** | Prometheus TSDB | Node Exporter, Kubernetes Namespaces, MinIO, Trino |
+
 ## Project Structure
 
 ```
