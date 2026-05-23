@@ -42,7 +42,6 @@ Services deploy in dependency order:
 
 | Wave | Services | Why |
 |------|----------|-----|
-| 0 | Sealed Secrets | Credentials must exist before anything else |
 | 1 | MinIO | Storage layer — everything else depends on it |
 | 2 | Nessie | Catalog depends on MinIO |
 | 3 | Trino, ClickHouse, CloudBeaver | Query layer depends on Nessie + MinIO |

@@ -43,7 +43,6 @@ flowchart TB
         end
     end
 
-    ArgoCD -->|wave 0| SS
     ArgoCD -->|wave 1| MinIO
     ArgoCD -->|wave 2| Nessie
     ArgoCD -->|wave 3| Trino & ClickHouse & CloudBeaver
@@ -70,7 +69,6 @@ sequenceDiagram
     Dev->>Dev: make seal (encrypt secrets)
     Dev->>GH: git push (sealed secrets + manifests)
     GH-->>ArgoCD: detects diff
-    ArgoCD->>K8s: wave 0 — Sealed Secrets
     ArgoCD->>K8s: wave 1-2 — MinIO, Nessie
     ArgoCD->>K8s: wave 3-4 — Trino, ClickHouse, Dagster
     ArgoCD->>K8s: wave 5-6 — Prometheus, Loki, Grafana
@@ -174,7 +172,6 @@ kubectl port-forward svc/dagster-dagster-webserver 3000:80 -n local-lakehouse
 
 | Wave | Services |
 |------|---------|
-| 0 | Sealed secrets |
 | 1 | MinIO |
 | 2 | Nessie |
 | 3 | Trino, ClickHouse, CloudBeaver |

@@ -27,7 +27,6 @@ Services deploy in order via ArgoCD sync waves:
 
 | Wave | What goes here |
 |------|---------------|
-| `0` | Secrets (must exist before pods start) |
 | `1` | Core services (MinIO, Nessie, etc.) |
 | `2` | Services that depend on wave 1 |
 
