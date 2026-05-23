@@ -113,6 +113,38 @@ make argocd-password  # prints the admin password
 
 ArgoCD pulls from GitHub and deploys all services in sync-wave order (storage → catalog → query → orchestration → observability).
 
+## Static Analysis (kube-score)
+
+This repository integrates `kube-score` to perform static code analysis on Kubernetes manifests and Helm templates, ensuring compliance with Kubernetes best practices (such as secure security contexts, resource limits, and readiness/liveness probes).
+
+### Running Locally
+
+You can run `kube-score` locally via Docker (no installation required):
+
+```bash
+helm template infra/minio/application/ | docker run -i --rm zegl/kube-score:latest score -
+```
+
+Or install it natively using Homebrew:
+
+```bash
+brew install kube-score
+helm template infra/minio/application/ | kube-score score -
+```
+
+To scan all local Helm charts at once:
+
+```bash
+for app in infra/*/application; do
+  echo "=== Scoring $app ==="
+  helm template "$app" | docker run -i --rm zegl/kube-score:latest score - || true
+done
+```
+
+### Continuous Integration (CI)
+
+The analysis runs automatically on every push and pull request via the GitHub Actions CI pipeline (`ci.yaml`). It is configured to run in warning-only mode (`continue-on-error: true`), allowing you to review recommended fixes directly inside the CI logs without blocking the build while you progressively improve your manifests.
+
 ## Makefile Reference
 
 ```mermaid

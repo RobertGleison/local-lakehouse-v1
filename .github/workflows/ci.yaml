@@ -28,5 +28,15 @@ jobs:
       - name: Lint YAML
         run: uv run yamllint .
 
+      - name: Run kube-score analysis
+        continue-on-error: true
+        run: |
+          for app in infra/*/application; do
+            echo "========================================="
+            echo "🔍 Scoring Helm chart: $app"
+            echo "========================================="
+            helm template "$app" | docker run -i --rm zegl/kube-score:latest score - || true
+          done
+
       - name: Run tests
         run: uv run pytest core/tests/ -v
