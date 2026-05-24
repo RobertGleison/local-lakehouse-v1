@@ -3,7 +3,10 @@ name = "local-lakehouse"
 version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "dlt[filesystem]>=1.27.0",
+    "requests>=2.34.2",
+]
 
 [dependency-groups]
 dev = [
