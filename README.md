@@ -283,6 +283,19 @@ graph LR
 | **Logs** (Textual events) | **Promtail** (DaemonSet) | **Push** | Loki (backed by MinIO S3) | Loki Logs |
 | **Metrics** (Numeric measurements) | **Prometheus** | **Pull** | Prometheus TSDB | Node Exporter, Kubernetes Namespaces, MinIO, Trino |
 
+## Pipeline Orchestration (Dagster)
+
+To meet the strict hardware constraints (**16 GB RAM maximum host memory**) of the local environment, the pipeline ingestion and transformation layers are optimized for a minimal footprint and in-process execution.
+
+### Execution Model
+
+Our Dagster architecture uses a single-pod execution model:
+*   **Run Launcher**: Uses the default **`DefaultRunLauncher`** to spin up pipeline runs as subprocesses inside the `dagster` pod's `daemon` container, rather than spawning heavyweight external Kubernetes pods.
+*   **Step Executor**: Uses the default **`multi_process_executor`** to run individual asset materialization steps as separate subprocesses within the same container.
+*   **In-Process Components**: Both **dlt** (ingestion) and **DuckDB** (transforms) run fully in-process/embedded inside these step subprocesses.
+
+This keeps the Dagster orchestration footprint extremely lightweight (**~500 MB idle, ~800 MB running**), leaving the majority of host memory available for query processing (Trino and ClickHouse).
+
 ## Project Structure
 
 ```
