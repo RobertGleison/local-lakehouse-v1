@@ -21,5 +21,7 @@ def test_layer_enum_values():
 
 def test_environment_enum_helpers():
     assert EnvironmentEnum.TEST.is_test() is True
+    assert EnvironmentEnum.CI.is_test() is True
     assert EnvironmentEnum.PRODUCTION.is_test() is False
     assert EnvironmentEnum.PRODUCTION.is_production() is True
+    assert EnvironmentEnum.DEVELOPMENT.is_production() is False

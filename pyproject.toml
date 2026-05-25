@@ -5,6 +5,7 @@ description = "Add your description here"
 requires-python = ">=3.12"
 dependencies = [
     "dlt[filesystem]>=1.27.0",
+    "pydantic-settings>=2.14.1",
     "requests>=2.34.2",
 ]
 
@@ -13,3 +14,7 @@ dev = [
     "pytest>=9.0.3",
     "yamllint>=1.38.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["core"]

@@ -11,7 +11,7 @@ class EnvironmentEnum(str, Enum):
         return self == EnvironmentEnum.PRODUCTION
 
     def is_test(self) -> bool:
-        return self == EnvironmentEnum.TEST
+        return self in (EnvironmentEnum.TEST, EnvironmentEnum.CI)
 
 
 class StorageEnum(str, Enum):
