@@ -67,29 +67,21 @@ def riot_source(summoner_names: List[str], region: str = "br1", match_count: int
     return summoners, match_ids, match_details
 
 
-def create_minio_pipeline(pipeline_name: str = "riot_lakehouse_ingest", dataset_name: str = "league_of_legends") -> dlt.Pipeline:
+def create_minio_pipeline(
+    pipeline_name: str = "riot_lakehouse_ingest",
+    dataset_name: str = "league_of_legends",
+    minio_settings: Optional["MinioSettings"] = None,
+) -> dlt.Pipeline:
     """
     Creates and configures a dlt pipeline pointing to the local MinIO S3-compatible Bronze layer.
+    Accepts an optional MinioSettings instance for testability; reads from environment by default.
     """
-    # Standard MinIO defaults for local k3d datalake environment
-    minio_endpoint = os.environ.get("MINIO_ENDPOINT_URL", "http://localhost:9000")
-    aws_access_key = os.environ.get("MINIO_ROOT_USER", "minioadmin")
-    aws_secret_key = os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin123")
-    bucket_url = os.environ.get("BRONZE_BUCKET_URL", "s3://bronze")
-
-    # Set dlt expected environment variables if not already explicitly set in environment
-    os.environ.setdefault("DESTINATION__FILESYSTEM__BUCKET_URL", bucket_url)
-    os.environ.setdefault("DESTINATION__FILESYSTEM__CREDENTIALS__AWS_ACCESS_KEY_ID", aws_access_key)
-    os.environ.setdefault("DESTINATION__FILESYSTEM__CREDENTIALS__AWS_SECRET_ACCESS_KEY", aws_secret_key)
-    os.environ.setdefault("DESTINATION__FILESYSTEM__CREDENTIALS__ENDPOINT_URL", minio_endpoint)
-    
-    # Configure fsspec/s3fs behavior (use custom endpoints for S3 destination)
-    # This prevents boto3 from trying to verify SSL or use AWS global endpoints
-    os.environ.setdefault("DESTINATION__FILESYSTEM__CREDENTIALS__AWS_SESSION_TOKEN", "")
-    os.environ.setdefault("DESTINATION__FILESYSTEM__CREDENTIALS__VERIFY", "False")
+    from core.settings.minio_settings import MinioSettings as _MinioSettings
+    settings = minio_settings or _MinioSettings()
+    settings.apply_to_environment()
 
     return dlt.pipeline(
         pipeline_name=pipeline_name,
         destination="filesystem",
-        dataset_name=dataset_name
+        dataset_name=dataset_name,
     )
