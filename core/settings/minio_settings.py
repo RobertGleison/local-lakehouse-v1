@@ -15,25 +15,18 @@ class MinioSettings(BaseSettings):
     )
 
     endpoint_url: str = Field(
-        default="http://minio:9000",
         alias="MINIO_ENDPOINT_URL",
         description="HTTP endpoint for the MinIO service",
     )
-
     access_key: str = Field(
-        default="minioadmin",
         alias="MINIO_ROOT_USER",
         description="MinIO root access key (AWS_ACCESS_KEY_ID equivalent)",
     )
-
     secret_key: SecretStr = Field(
-        default=SecretStr("minioadmin123"),
         alias="MINIO_ROOT_PASSWORD",
         description="MinIO root secret key (AWS_SECRET_ACCESS_KEY equivalent)",
     )
-
     bronze_bucket_url: str = Field(
-        default="s3://bronze",
         alias="BRONZE_BUCKET_URL",
         description="dlt filesystem destination bucket URL for the Bronze layer",
     )

@@ -1,6 +1,7 @@
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class LakeSettings(BaseSettings):
     """
     Settings to configure connection strings, ports, and authorization
@@ -9,57 +10,43 @@ class LakeSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore",
     )
 
     # ClickHouse Connection Configurations
     clickhouse_host: str = Field(
-        default="clickhouse",
         alias="CLICKHOUSE_HOST",
-        description="Host address of the ClickHouse service in the cluster"
+        description="Host address of the ClickHouse service in the cluster",
     )
-
     clickhouse_http_port: int = Field(
-        default=8123,
         alias="CLICKHOUSE_HTTP_PORT",
-        description="HTTP connection port for ClickHouse server"
+        description="HTTP connection port for ClickHouse server",
     )
-
     clickhouse_native_port: int = Field(
-        default=9000,
         alias="CLICKHOUSE_NATIVE_PORT",
-        description="Native TCP protocol port for ClickHouse server"
+        description="Native TCP protocol port for ClickHouse server",
     )
-
     clickhouse_user: str = Field(
-        default="default",
         alias="CLICKHOUSE_USER",
-        description="ClickHouse login username"
+        description="ClickHouse login username",
     )
-
     clickhouse_password: SecretStr = Field(
-        default=SecretStr(""),
         alias="CLICKHOUSE_PASSWORD",
-        description="ClickHouse login password"
+        description="ClickHouse login password",
     )
-
     clickhouse_database: str = Field(
-        default="default",
         alias="CLICKHOUSE_DATABASE",
-        description="Default database schema for ClickHouse connection"
+        description="Default database schema for ClickHouse connection",
     )
 
     # Cloudbeaver Configurations
     cloudbeaver_host: str = Field(
-        default="cloudbeaver",
         alias="CLOUDBEAVER_HOST",
-        description="Host address of the Cloudbeaver Web SQL editor"
+        description="Host address of the Cloudbeaver Web SQL editor",
     )
-
     cloudbeaver_port: int = Field(
-        default=8978,
         alias="CLOUDBEAVER_PORT",
-        description="Connection port for Cloudbeaver Web UI"
+        description="Connection port for Cloudbeaver Web UI",
     )
 
     @property
