@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-SERVICES_FILE = Path(__file__).parents[2] / "argocd" / "appsets" / "services.json"
+SERVICES_FILE = Path(__file__).parents[3] / "argocd" / "appsets" / "services.json"
 REQUIRED_FIELDS = {"service", "path", "wave"}
 
 
